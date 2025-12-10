@@ -1,0 +1,85 @@
+### Shopping Cart API - Manual Tests
+### Use with REST Client extension in VS Code
+###
+### 💡 Visualize data: http://localhost:4000 (Firebase Emulator UI)
+
+@baseUrl = http://localhost:3000
+@clientId = test-client-1
+@tokenWriter = token-writer
+@tokenAdmin = token-admin
+
+### Add product item to cart
+POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items
+Authorization: Bearer {{tokenWriter}}
+Content-Type: application/json
+
+{
+  "productId": "product-1",
+  "quantity": 2
+}
+
+### Add another product (to SAME cart)
+POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items
+Authorization: Bearer {{tokenWriter}}
+Content-Type: application/json
+
+{
+  "productId": "product-2",
+  "quantity": 1
+}
+
+### Get shopping cart details (READ from Realtime DB - Details projection)
+GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current
+Authorization: Bearer {{tokenAdmin}}
+
+### Get shopping cart summary (READ from Realtime DB - ShortInfo projection)
+GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/summary
+Authorization: Bearer {{tokenAdmin}}
+
+### Remove product item from cart
+DELETE {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items?productId=product-1&quantity=1&unitPrice=100
+Authorization: Bearer {{tokenWriter}}
+
+### Confirm cart
+POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/confirm
+Authorization: Bearer {{tokenWriter}}
+
+### Try to get confirmed cart (should return 404 - projection deleted)
+GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current
+Authorization: Bearer {{tokenAdmin}}
+
+### Try to get summary of confirmed cart (should return 404 - projection deleted)
+GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/summary
+Authorization: Bearer {{tokenAdmin}}
+
+### Try to add to confirmed cart (should fail)
+POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items
+Authorization: Bearer {{tokenWriter}}
+Content-Type: application/json
+
+{
+  "productId": "product-3",
+  "quantity": 1
+}
+
+### New cart for different client
+POST {{baseUrl}}/clients/another-client/shopping-carts/current/product-items
+Authorization: Bearer {{tokenWriter}}
+Content-Type: application/json
+
+{
+  "productId": "product-3",
+  "quantity": 5
+}
+
+### Get details for another-client cart
+GET {{baseUrl}}/clients/another-client/shopping-carts/current
+Authorization: Bearer {{tokenAdmin}}
+
+### Get summary for another-client cart
+GET {{baseUrl}}/clients/another-client/shopping-carts/current/summary
+Authorization: Bearer {{tokenAdmin}}
+
+### Cancel cart
+DELETE {{baseUrl}}/clients/another-client/shopping-carts/current
+Authorization: Bearer {{tokenWriter}}

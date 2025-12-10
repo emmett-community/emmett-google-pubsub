@@ -1,0 +1,93 @@
+{
+  "name": "@emmett-community/emmett-google-pubsub",
+  "version": "0.1.0",
+  "description": "Google Cloud Pub/Sub message bus for Emmett - Event Sourcing development made simple",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing/index.d.mts",
+        "default": "./dist/testing/index.mjs"
+      },
+      "require": {
+        "types": "./dist/testing/index.d.ts",
+        "default": "./dist/testing/index.js"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:ts": "tsc --noEmit",
+    "test": "jest",
+    "test:unit": "jest test/unit",
+    "test:integration": "jest test/integration",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "emmett",
+    "event-sourcing",
+    "google-pubsub",
+    "message-bus",
+    "cqrs",
+    "event-driven",
+    "ddd"
+  ],
+  "author": "Emmett Community",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/emmett-community/emmett-google-pubsub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/emmett-community/emmett-google-pubsub/issues"
+  },
+  "homepage": "https://github.com/emmett-community/emmett-google-pubsub#readme",
+  "peerDependencies": {
+    "@event-driven-io/emmett": "^0.39.0"
+  },
+  "dependencies": {
+    "@google-cloud/pubsub": "^4.8.0"
+  },
+  "devDependencies": {
+    "@event-driven-io/emmett": "^0.39.1",
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.10.1",
+    "@typescript-eslint/eslint-plugin": "^8.17.0",
+    "@typescript-eslint/parser": "^8.17.0",
+    "eslint": "^9.16.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "jest": "^29.7.0",
+    "prettier": "^3.4.2",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

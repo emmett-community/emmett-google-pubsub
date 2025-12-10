@@ -1,0 +1,42 @@
+{
+  "name": "emmett-example-shopping-cart-pubsub",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shopping cart example with Firestore EventStore + Realtime DB projections + PubSub MessageBus",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "test": "run-s test:unit test:int test:e2e",
+    "test:unit": "glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.unit.spec.ts\"",
+    "test:int": "glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.int.spec.ts\"",
+    "test:e2e": "glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.e2e.spec.ts\"",
+    "test:watch": "run-p test:unit:watch test:int:watch test:e2e:watch",
+    "test:unit:watch": "glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.unit.spec.ts\"",
+    "test:int:watch": "glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.int.spec.ts\"",
+    "test:e2e:watch": "glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.e2e.spec.ts\""
+  },
+  "dependencies": {
+    "@emmett-community/emmett-expressjs-with-openapi": "file:../../../emmett-expressjs-with-openapi",
+    "@emmett-community/emmett-google-firestore": "file:../../../emmett-google-firestore",
+    "@emmett-community/emmett-google-pubsub": "file:../..",
+    "@emmett-community/emmett-google-realtime-db": "file:../../../emmett-google-realtime-db",
+    "@event-driven-io/emmett": "0.39.1",
+    "@google-cloud/firestore": "7.11.6",
+    "@google-cloud/pubsub": "^4.9.0",
+    "express": "^4.21.2",
+    "express-async-errors": "^3.1.1",
+    "express-openapi-validator": "^5.6.0",
+    "firebase-admin": "^12.7.0",
+    "http-problem-details": "^0.1.7",
+    "supertest": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/supertest": "^6.0.2",
+    "glob": "^11.0.0",
+    "npm-run-all2": "^6.2.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.5.4"
+  }
+}

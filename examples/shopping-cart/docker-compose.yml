@@ -1,0 +1,55 @@
+services:
+  firebase:
+    build:
+      context: .
+      dockerfile: Dockerfile.firebase
+    container_name: shopping-cart-firebase
+    ports:
+      - "8080:8080"  # Firestore
+      - "9000:9000"  # Realtime Database
+      - "4000:4000"  # UI
+      - "8085:8085"  # PubSub
+    environment:
+      - FIRESTORE_PROJECT_ID=demo-project
+    volumes:
+      - ./firebase.json:/app/firebase.json:ro
+      - ./.firebaserc:/app/.firebaserc:ro
+      - firestore-data:/opt/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - FIRESTORE_PROJECT_ID=demo-project
+      - FIRESTORE_EMULATOR_HOST=firebase:8080
+      - FIREBASE_DATABASE_EMULATOR_HOST=firebase:9000
+      - PUBSUB_PROJECT_ID=demo-project
+      - PUBSUB_EMULATOR_HOST=firebase:8085
+      - PORT=3000
+    depends_on:
+      firebase:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pubsub-ui:
+    image: ghcr.io/neoscript/pubsub-emulator-ui:latest
+    container_name: shopping-cart-pubsub-ui
+    ports:
+      - "8086:8080"
+    environment:
+      - PUBSUB_EMULATOR_HOST=firebase:8085
+      - PUBSUB_PROJECT_ID=demo-project
+    depends_on:
+      - firebase
+
+volumes:
+  firestore-data:
