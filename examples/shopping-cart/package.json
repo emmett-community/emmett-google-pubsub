@@ -5,17 +5,17 @@
   "type": "module",
   "description": "Shopping cart example with Firestore EventStore + Realtime DB projections + PubSub MessageBus",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.json",
     "start": "tsx src/index.ts",
     "dev": "tsx watch src/index.ts",
     "test": "run-s test:unit test:int test:e2e",
     "test:unit": "glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.unit.spec.ts\"",
-    "test:int": "glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.int.spec.ts\"",
-    "test:e2e": "glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.e2e.spec.ts\"",
+    "test:int": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_DATABASE_EMULATOR_HOST=localhost:9000 PUBSUB_EMULATOR_HOST=localhost:8085 glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.int.spec.ts\"",
+    "test:e2e": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_DATABASE_EMULATOR_HOST=localhost:9000 PUBSUB_EMULATOR_HOST=localhost:8085 glob -d -c \"node --import tsx --import tsx/cjs --test\" \"test/**/*.e2e.spec.ts\"",
     "test:watch": "run-p test:unit:watch test:int:watch test:e2e:watch",
     "test:unit:watch": "glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.unit.spec.ts\"",
-    "test:int:watch": "glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.int.spec.ts\"",
-    "test:e2e:watch": "glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.e2e.spec.ts\""
+    "test:int:watch": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_DATABASE_EMULATOR_HOST=localhost:9000 PUBSUB_EMULATOR_HOST=localhost:8085 glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.int.spec.ts\"",
+    "test:e2e:watch": "FIRESTORE_EMULATOR_HOST=localhost:8080 FIREBASE_DATABASE_EMULATOR_HOST=localhost:9000 PUBSUB_EMULATOR_HOST=localhost:8085 glob -d -c \"node --import tsx --import tsx/cjs --test --watch\" \"test/**/*.e2e.spec.ts\""
   },
   "dependencies": {
     "@emmett-community/emmett-expressjs-with-openapi": "^0.1.0",
