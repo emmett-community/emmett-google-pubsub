@@ -55,11 +55,11 @@
     "event-driven",
     "ddd"
   ],
-  "author": "Emmett Community",
+  "author": "Andre X Costa",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/emmett-community/emmett-google-pubsub.git"
+    "url": "git+https://github.com/emmett-community/emmett-google-pubsub.git"
   },
   "bugs": {
     "url": "https://github.com/emmett-community/emmett-google-pubsub/issues"
@@ -89,5 +89,6 @@
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "publishConfig": {"access": "public"}
 }
