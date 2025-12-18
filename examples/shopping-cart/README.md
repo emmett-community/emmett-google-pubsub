@@ -111,27 +111,77 @@ npm install
 
 ### Running with Docker (Recommended)
 
-Start everything (emulators + application):
+#### Quick Start
 
 ```bash
-# Start all services
+# 1. Build the application locally
+npm install
+npm run build  # Compile TypeScript to dist/
+
+# 2. Start all services (emulators + application)
 docker-compose up -d
 
-# View logs
-docker-compose logs -f
+# 3. Verify all services are running
+docker-compose ps  # Should show: firebase, pubsub-ui, app (all "Up")
 
-# Stop all services
+# 4. View logs
+docker-compose logs -f app
+
+# 5. Stop all services
 docker-compose down
 
-# Stop and clear all data (volumes)
+# 6. Stop and clear all data (volumes)
 docker-compose down -v
 ```
 
-Access points:
+#### Access Points
 
 - **API**: <http://localhost:3000>
 - **Firebase Emulator UI**: <http://localhost:4000> (Firestore + Realtime DB)
-- **PubSub UI**: <http://localhost:8086> (PubSub topics and subscriptions)
+- **PubSub UI**: <http://localhost:4001> (PubSub topics and subscriptions)
+
+#### 📊 Visualizing Data in UIs
+
+##### Realtime Database Projections (Firebase UI - port 4000)
+
+1. Navigate to: <http://localhost:4000/database/demo-project/data>
+2. Expand: `projections/shoppingCartDetails/` and `projections/shoppingCartShortInfo/`
+3. See projections being created/updated in real-time as you interact with the API
+
+##### PubSub Messages (PubSub UI - port 4001)
+
+1. Access: <http://localhost:4001>
+2. Navigate to: Topic `shopping-cart-evt-ShoppingCartConfirmed`
+3. Messages remain visible because the app is in **producer-only mode** (see below)
+
+#### 🔧 Producer-Only Mode
+
+The application is configured in "producer-only" mode:
+
+- ✅ Messages are **published** to PubSub topics
+- ❌ Messages are **NOT consumed** (subscriptions are commented)
+- 📊 This allows you to see messages accumulate in the PubSub UI
+
+**To enable message consumption**: Uncomment the subscription in `src/index.ts` (lines 95-102), rebuild, and restart:
+
+```bash
+npm run build
+docker-compose up -d --build
+```
+
+#### 🔄 Rebuild After Code Changes
+
+```bash
+npm run build  # Recompile TypeScript to dist/
+docker-compose up -d --build  # Rebuild Docker image
+```
+
+#### 🧪 Testing with VS Code REST Client
+
+1. Open `.http` file in VS Code
+2. Execute requests (requires [REST Client extension](https://marketplace.visualstudio.com/items?itemName=humao.rest-client))
+3. Follow the visualization guides in the comments
+4. Watch the data flow in the UIs
 
 ### Running Locally (Development)
 
@@ -163,12 +213,14 @@ Visit http://localhost:4000 to:
 
 ### PubSub Emulator UI
 
-Visit <http://localhost:8086> to:
+Visit <http://localhost:4001> to:
 
 - View PubSub topics (e.g., `shopping-cart-evt-ShoppingCartConfirmed`)
 - Monitor active subscriptions
 - See message flow in real-time
 - Debug event delivery
+
+**Note**: Messages are only visible if the app is in producer-only mode (subscriptions commented out).
 
 ### Clearing Emulator Data
 

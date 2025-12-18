@@ -1,7 +1,9 @@
 ### Shopping Cart API - Manual Tests
 ### Use with REST Client extension in VS Code
 ###
-### 💡 Visualize data: http://localhost:4000 (Firebase Emulator UI)
+### 📊 Visualize data:
+### - Firebase Emulator UI: http://localhost:4000/database/demo-project/data
+### - PubSub UI: http://localhost:4001
 
 @baseUrl = http://localhost:3000
 @clientId = test-client-1
@@ -9,6 +11,14 @@
 @tokenAdmin = token-admin
 
 ### Add product item to cart
+# 📝 Action: Creates ProductItemAddedToShoppingCart event and stores it in Firestore
+# 🔍 Firebase UI (http://localhost:4000/database/demo-project/data):
+#    - Check: projections/shoppingCartDetails/shopping_cart:test-client-1:current
+#      Shows complete cart with: clientId, productItems[], status, totalAmount
+#    - Check: projections/shoppingCartShortInfo/shopping_cart:test-client-1:current
+#      Shows summary: productItemsCount, totalAmount
+# 📨 PubSub UI (http://localhost:4001):
+#    - No messages yet (only confirmation events are published to PubSub)
 POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items
 Authorization: Bearer {{tokenWriter}}
 Content-Type: application/json
@@ -19,6 +29,13 @@ Content-Type: application/json
 }
 
 ### Add another product (to SAME cart)
+# 📝 Action: Adds second product and updates both projections
+# 🔍 Firebase UI (http://localhost:4000/database/demo-project/data):
+#    - Projections updated with new product and totals
+#    - productItemsCount: 3 (2 + 1)
+#    - totalAmount: 300 (2*100 + 1*100)
+# 📨 PubSub UI (http://localhost:4001):
+#    - Still no messages (only confirmation publishes to PubSub)
 POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items
 Authorization: Bearer {{tokenWriter}}
 Content-Type: application/json
@@ -29,30 +46,63 @@ Content-Type: application/json
 }
 
 ### Get shopping cart details (READ from Realtime DB - Details projection)
+# 📝 Action: Reads shoppingCartDetails projection from Realtime Database
+# 🔍 Firebase UI: Same projection visible at projections/shoppingCartDetails/...
+# 📨 PubSub UI: No messages
 GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current
 Authorization: Bearer {{tokenAdmin}}
 
 ### Get shopping cart summary (READ from Realtime DB - ShortInfo projection)
+# 📝 Action: Reads shoppingCartShortInfo projection from Realtime Database
+# 🔍 Firebase UI: Same projection visible at projections/shoppingCartShortInfo/...
+# 📨 PubSub UI: No messages
 GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/summary
 Authorization: Bearer {{tokenAdmin}}
 
 ### Remove product item from cart
+# 📝 Action: Creates ProductItemRemovedFromShoppingCart event and updates projections
+# 🔍 Firebase UI (http://localhost:4000/database/demo-project/data):
+#    - Projections updated: product-1 quantity reduced or removed
+#    - Totals recalculated
+# 📨 PubSub UI (http://localhost:4001):
+#    - No messages (removal doesn't publish to PubSub)
 DELETE {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items?productId=product-1&quantity=1&unitPrice=100
 Authorization: Bearer {{tokenWriter}}
 
 ### Confirm cart
+# 📝 Action: Confirms cart, PUBLISHES ShoppingCartConfirmed message, and DELETES projections
+# 🔍 Firebase UI (http://localhost:4000/database/demo-project/data):
+#    - BOTH projections will be REMOVED (deleted after confirmation)
+#    - Navigate to: projections/shoppingCartDetails/ and projections/shoppingCartShortInfo/
+#    - The cart shopping_cart:test-client-1:current should disappear
+# 📨 PubSub UI (http://localhost:4001):
+#    - ⭐ CHECK TOPIC: "shopping-cart-evt-ShoppingCartConfirmed"
+#    - A new message should appear with cart details
+#    - Message will be VISIBLE because app is in producer-only mode (no consumers)
 POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/confirm
 Authorization: Bearer {{tokenWriter}}
 
 ### Try to get confirmed cart (should return 404 - projection deleted)
+# 📝 Action: Attempts to read deleted projection
+# 🔍 Firebase UI: Projection no longer exists (was deleted on confirmation)
+# 📨 PubSub UI: No new messages
+# ⚠️  Expected: 404 Not Found
 GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current
 Authorization: Bearer {{tokenAdmin}}
 
 ### Try to get summary of confirmed cart (should return 404 - projection deleted)
+# 📝 Action: Attempts to read deleted projection
+# 🔍 Firebase UI: Projection no longer exists
+# 📨 PubSub UI: No new messages
+# ⚠️  Expected: 404 Not Found
 GET {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/summary
 Authorization: Bearer {{tokenAdmin}}
 
 ### Try to add to confirmed cart (should fail)
+# 📝 Action: Attempts to add product to confirmed cart
+# 🔍 Firebase UI: No changes (operation should fail)
+# 📨 PubSub UI: No new messages
+# ⚠️  Expected: Error (cannot modify confirmed cart)
 POST {{baseUrl}}/clients/{{clientId}}/shopping-carts/current/product-items
 Authorization: Bearer {{tokenWriter}}
 Content-Type: application/json
@@ -63,6 +113,13 @@ Content-Type: application/json
 }
 
 ### New cart for different client
+# 📝 Action: Creates new cart for "another-client"
+# 🔍 Firebase UI (http://localhost:4000/database/demo-project/data):
+#    - New projections appear:
+#      * projections/shoppingCartDetails/shopping_cart:another-client:current
+#      * projections/shoppingCartShortInfo/shopping_cart:another-client:current
+# 📨 PubSub UI (http://localhost:4001):
+#    - No new messages
 POST {{baseUrl}}/clients/another-client/shopping-carts/current/product-items
 Authorization: Bearer {{tokenWriter}}
 Content-Type: application/json
@@ -73,13 +130,24 @@ Content-Type: application/json
 }
 
 ### Get details for another-client cart
+# 📝 Action: Reads another-client cart details projection
+# 🔍 Firebase UI: Shows data at projections/shoppingCartDetails/shopping_cart:another-client:current
+# 📨 PubSub UI: No messages
 GET {{baseUrl}}/clients/another-client/shopping-carts/current
 Authorization: Bearer {{tokenAdmin}}
 
 ### Get summary for another-client cart
+# 📝 Action: Reads another-client cart summary projection
+# 🔍 Firebase UI: Shows data at projections/shoppingCartShortInfo/shopping_cart:another-client:current
+# 📨 PubSub UI: No messages
 GET {{baseUrl}}/clients/another-client/shopping-carts/current/summary
 Authorization: Bearer {{tokenAdmin}}
 
 ### Cancel cart
+# 📝 Action: Cancels cart and DELETES projections (no PubSub message)
+# 🔍 Firebase UI (http://localhost:4000/database/demo-project/data):
+#    - BOTH projections for another-client cart will be REMOVED
+# 📨 PubSub UI (http://localhost:4001):
+#    - No new messages (cancellation doesn't publish to PubSub)
 DELETE {{baseUrl}}/clients/another-client/shopping-carts/current
 Authorization: Bearer {{tokenWriter}}

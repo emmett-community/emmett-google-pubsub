@@ -265,19 +265,17 @@ describe('Commands Integration Tests', () => {
   });
 
   describe('lifecycle management', () => {
-    it('should throw error when sending before start', async () => {
+    it('should allow sending before start (producer-only mode)', async () => {
       const messageBus = getTestMessageBus();
 
-      messageBus.handle(
-        async (command: Command) => {
-          console.log('Handler', command);
-        },
-        'TestCommand',
-      );
-
+      // Sending without start() is allowed for producer-only scenarios
+      // (e.g., when only sending commands without handling them)
       await expect(
         messageBus.send(createTestCommand('cmd-1', 'test')),
-      ).rejects.toThrow('Message bus is not started');
+      ).resolves.not.toThrow();
+
+      // Cleanup
+      await messageBus.close();
     });
 
     it('should be idempotent when calling start multiple times', async () => {

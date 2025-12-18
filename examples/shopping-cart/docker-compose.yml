@@ -24,15 +24,15 @@ services:
 
   app:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: examples/shopping-cart/Dockerfile
+    container_name: shopping-cart-app
     ports:
       - "3000:3000"
     environment:
       - FIRESTORE_PROJECT_ID=demo-project
       - FIRESTORE_EMULATOR_HOST=firebase:8080
       - FIREBASE_DATABASE_EMULATOR_HOST=firebase:9000
-      - PUBSUB_PROJECT_ID=demo-project
       - PUBSUB_EMULATOR_HOST=firebase:8085
       - PORT=3000
     depends_on:
@@ -44,7 +44,7 @@ services:
     image: ghcr.io/neoscript/pubsub-emulator-ui:latest
     container_name: shopping-cart-pubsub-ui
     ports:
-      - "8086:8080"
+      - "4001:80"
     environment:
       - PUBSUB_EMULATOR_HOST=firebase:8085
       - PUBSUB_PROJECT_ID=demo-project

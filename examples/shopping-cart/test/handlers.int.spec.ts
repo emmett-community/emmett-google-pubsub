@@ -17,7 +17,7 @@ import admin from 'firebase-admin';
 import type { Database } from 'firebase-admin/database';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { beforeEach, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   type PricedProductItem,
@@ -49,6 +49,7 @@ void describe('ShoppingCart integration (OpenAPI)', () => {
     pubsub,
     useEmulator: !!process.env.PUBSUB_EMULATOR_HOST,
     topicPrefix: 'shopping-cart-test',
+    closePubSubClient: false,
   });
 
   const oldTime = new Date();
@@ -57,6 +58,11 @@ void describe('ShoppingCart integration (OpenAPI)', () => {
   beforeEach(() => {
     clientId = randomUUID();
     shoppingCartId = `shopping_cart:${clientId}:current`;
+  });
+
+  after(async () => {
+    await firestore.terminate();
+    await admin.app().delete();
   });
 
   void describe('When empty', () => {
@@ -330,6 +336,11 @@ void describe('ShoppingCart integration (OpenAPI)', () => {
             validateResponses: false,
             operationHandlers: path.join(__dirname, '../src/handlers'),
             initializeHandlers: async (handlers?: ImportedHandlerModules) => {
+              // Ensure message bus is started before handlers use it
+              if (!messageBus.isStarted()) {
+                await messageBus.start();
+              }
+
               handlers!.shoppingCarts.initializeHandlers(
                 eventStore,
                 database,

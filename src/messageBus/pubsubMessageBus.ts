@@ -142,19 +142,6 @@ export function getPubSubMessageBus(
   }
 
   /**
-   * Ensure the message bus has been started before performing operations
-   *
-   * @throws Error if the message bus is not started
-   */
-  function ensureStarted(): void {
-    if (!started) {
-      throw new Error(
-        'Message bus is not started. Call start() before sending/publishing messages.',
-      );
-    }
-  }
-
-  /**
    * Create subscription for a specific message type
    *
    * @param messageType - The message type
@@ -228,7 +215,8 @@ export function getPubSubMessageBus(
     message: Message,
     kind: 'command' | 'event',
   ): Promise<void> {
-    ensureStarted();
+    // Publishing without start() is allowed (producer-only mode)
+    // start() is only required for consumers (handlers/subscribers)
 
     // Get topic name
     const topicName =
@@ -554,52 +542,50 @@ export function getPubSubMessageBus(
      * ```
      */
     async close(): Promise<void> {
-      if (!started) {
-        console.debug('Message bus not started, skipping close');
-        return;
-      }
-
       console.info('Closing PubSub message bus...');
 
       try {
-        // Stop accepting new messages
-        for (const { subscription } of subscriptions) {
-          subscription.removeAllListeners('message');
-          subscription.removeAllListeners('error');
-        }
+        // Only cleanup subscriptions if started
+        if (started) {
+          // Stop accepting new messages
+          for (const { subscription } of subscriptions) {
+            subscription.removeAllListeners('message');
+            subscription.removeAllListeners('error');
+          }
 
-        // Wait for in-flight messages with timeout (30 seconds)
-        const timeout = 30000;
-        const waitStart = Date.now();
+          // Wait for in-flight messages with timeout (30 seconds)
+          const timeout = 30000;
+          const waitStart = Date.now();
 
-        // Close all subscriptions
-        const closePromises = subscriptions.map(({ subscription }) =>
-          subscription.close(),
-        );
-        await Promise.race([
-          Promise.all(closePromises),
-          new Promise((resolve) => setTimeout(resolve, timeout)),
-        ]);
-
-        const waitTime = Date.now() - waitStart;
-        if (waitTime >= timeout) {
-          console.warn(
-            `Timeout waiting for in-flight messages after ${timeout}ms`,
+          // Close all subscriptions
+          const closePromises = subscriptions.map(({ subscription }) =>
+            subscription.close(),
           );
+          await Promise.race([
+            Promise.all(closePromises),
+            new Promise((resolve) => setTimeout(resolve, timeout)),
+          ]);
+
+          const waitTime = Date.now() - waitStart;
+          if (waitTime >= timeout) {
+            console.warn(
+              `Timeout waiting for in-flight messages after ${timeout}ms`,
+            );
+          }
+
+          // Cleanup subscriptions if configured
+          if (cleanupOnClose) {
+            console.info('Cleaning up subscriptions...');
+            await deleteSubscriptions(subscriptions.map((s) => s.subscription));
+          }
+
+          started = false;
         }
 
-        // Cleanup subscriptions if configured
-        if (cleanupOnClose) {
-          console.info('Cleaning up subscriptions...');
-          await deleteSubscriptions(subscriptions.map((s) => s.subscription));
-        }
-
-        // Close PubSub client if configured
+        // Always close PubSub client (even if not started, for producer-only mode)
         if (closePubSubClient !== false) {
           await config.pubsub.close();
         }
-
-        started = false;
 
         console.info('PubSub message bus closed');
       } catch (error) {

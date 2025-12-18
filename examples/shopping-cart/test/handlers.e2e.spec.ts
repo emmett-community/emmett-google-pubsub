@@ -15,7 +15,7 @@ import admin from 'firebase-admin';
 import type { Database } from 'firebase-admin/database';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { before, beforeEach, describe, it } from 'node:test';
+import { after, before, beforeEach, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { ProductItem } from '../src/shoppingCarts/shoppingCart';
 import { shoppingCartDetailsProjection } from '../src/shoppingCarts/getDetails';
@@ -33,9 +33,10 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
   let shoppingCartId: string;
   let given: ApiE2ESpecification;
   let database: Database;
+  let firestore: Firestore;
 
   before(async () => {
-    const firestore = new Firestore({
+    firestore = new Firestore({
       projectId: 'demo-project',
       host: process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080',
       ssl: false,
@@ -72,6 +73,7 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
       pubsub,
       useEmulator: !!process.env.PUBSUB_EMULATOR_HOST,
       topicPrefix: 'shopping-cart-e2e',
+      closePubSubClient: false,
     });
 
     // Start message bus for E2E tests
@@ -104,6 +106,11 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
           ),
         }),
     );
+  });
+
+  after(async () => {
+    await firestore.terminate();
+    await admin.app().delete();
   });
 
   beforeEach(async () => {
@@ -191,13 +198,8 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
     });
 
     // NEW: Test reading projections from RTDB
-    void it('gets cart details from projection', async () => {
-      await given(openedShoppingCart);
-
-      // Wait for PubSub message delivery and projection update
-      await waitForMessageDelivery();
-
-      return given()
+    void it('gets cart details from projection', () => {
+      return given(openedShoppingCart)
         .when((request) =>
           request
             .get(`/clients/${clientId}/shopping-carts/current`)
@@ -206,13 +208,8 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
         .then([expectResponse(200)]);
     });
 
-    void it('gets cart summary from projection', async () => {
-      await given(openedShoppingCart);
-
-      // Wait for PubSub message delivery and projection update
-      await waitForMessageDelivery();
-
-      return given()
+    void it('gets cart summary from projection', () => {
+      return given(openedShoppingCart)
         .when((request) =>
           request
             .get(`/clients/${clientId}/shopping-carts/current/summary`)

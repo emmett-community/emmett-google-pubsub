@@ -359,19 +359,17 @@ describe('Events Integration Tests', () => {
   });
 
   describe('lifecycle management', () => {
-    it('should throw error when publishing before start', async () => {
+    it('should allow publishing before start (producer-only mode)', async () => {
       const messageBus = getTestMessageBus();
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          console.log('Handler', event);
-        },
-        'TestEvent',
-      );
-
+      // Publishing without start() is allowed for producer-only scenarios
+      // (e.g., when only sending commands/events without consuming)
       await expect(
         messageBus.publish(createTestEvent('evt-1', 'test')),
-      ).rejects.toThrow('Message bus is not started');
+      ).resolves.not.toThrow();
+
+      // Cleanup
+      await messageBus.close();
     });
   });
 });

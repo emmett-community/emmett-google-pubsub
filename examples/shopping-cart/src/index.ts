@@ -33,11 +33,14 @@ const PUBSUB_PROJECT_ID = process.env.PUBSUB_PROJECT_ID || 'demo-project';
 const PUBSUB_EMULATOR_HOST = process.env.PUBSUB_EMULATOR_HOST;
 
 // Initialize Firebase Admin
+// Always provide databaseURL with namespace to prevent "fake-server" creation
+const databaseURL = DATABASE_EMULATOR_HOST
+  ? `http://${DATABASE_EMULATOR_HOST}?ns=${FIRESTORE_PROJECT_ID}`
+  : `https://${FIRESTORE_PROJECT_ID}-default-rtdb.firebaseio.com`;
+
 admin.initializeApp({
   projectId: FIRESTORE_PROJECT_ID,
-  ...(DATABASE_EMULATOR_HOST && {
-    databaseURL: `http://${DATABASE_EMULATOR_HOST}?ns=${FIRESTORE_PROJECT_ID}`,
-  }),
+  databaseURL,
 });
 
 // Get Firestore and Realtime Database instances
@@ -71,6 +74,7 @@ if (PUBSUB_EMULATOR_HOST) {
 const baseEventStore = getFirestoreEventStore(firestore);
 
 // Wire Realtime DB projections to the event store
+// @ts-ignore - Type compatibility issue between Firestore and generic EventStore
 const eventStore = wireRealtimeDBProjections<typeof baseEventStore>({
   eventStore: baseEventStore,
   database,
@@ -89,13 +93,14 @@ const messageBus = getPubSubMessageBus({
 const getUnitPrice = (_productId: string) => Promise.resolve(100);
 const getCurrentTime = () => new Date();
 
-messageBus.subscribe((event: ShoppingCartConfirmed) => {
-  if (event.type === 'ShoppingCartConfirmed') {
-    console.info(
-      `Shopping cart confirmed: ${event.data.shoppingCartId} at ${event.data.confirmedAt.toISOString()}`,
-    );
-  }
-}, 'ShoppingCartConfirmed');
+// Temporarily disabled to view messages in PubSub UI
+// messageBus.subscribe((event: ShoppingCartConfirmed) => {
+//   if (event.type === 'ShoppingCartConfirmed') {
+//     console.info(
+//       `Shopping cart confirmed: ${event.data.shoppingCartId} at ${event.data.confirmedAt.toISOString()}`,
+//     );
+//   }
+// }, 'ShoppingCartConfirmed');
 
 const users = new Map([
   ['token-writer', { id: 'writer', scopes: ['cart:write'] }],
@@ -178,9 +183,9 @@ export const app: Application = await getApplication({
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT ?? 3000);
 
-  // Start message bus before starting API
+  // Start message bus before starting API (in producer-only mode - no subscriptions)
   await messageBus.start();
-  console.log('✅ Message bus started');
+  console.log('✅ Message bus started in producer-only mode (not consuming messages)');
 
   startAPI(app, { port });
   console.log(`🚀 Shopping Cart API listening on http://localhost:${port}`);
