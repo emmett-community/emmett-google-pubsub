@@ -22,7 +22,6 @@ Complete API documentation for `@emmett-community/emmett-google-pubsub`.
 - [Types](#types)
   - [PubSubMessageEnvelope](#pubsubmessageenvelope)
   - [PubSubMessageBusLifecycle](#pubsubmessagebuslifecycle)
-- [Testing Utilities](#testing-utilities)
 
 ---
 
@@ -472,80 +471,6 @@ interface PubSubMessageBusLifecycle {
   close(): Promise<void>;
   isStarted(): boolean;
 }
-```
-
----
-
-## Testing Utilities
-
-The package exports testing utilities from the `/testing` subpath:
-
-```typescript
-import { /* utilities */ } from '@emmett-community/emmett-google-pubsub/testing';
-```
-
-### Available Utilities
-
-| Utility | Description |
-|---------|-------------|
-| `getTestPubSub()` | Creates PubSub client configured for emulator |
-| `createTestMessageBus()` | Creates message bus with test defaults |
-| `waitForMessages()` | Waits for async message delivery |
-
-### Example Test Setup
-
-```typescript
-import { PubSub } from '@google-cloud/pubsub';
-import { getPubSubMessageBus } from '@emmett-community/emmett-google-pubsub';
-
-describe('My Tests', () => {
-  let messageBus: ReturnType<typeof getPubSubMessageBus>;
-  let pubsub: PubSub;
-
-  beforeAll(() => {
-    pubsub = new PubSub({
-      projectId: 'test-project',
-    });
-  });
-
-  beforeEach(() => {
-    messageBus = getPubSubMessageBus({
-      pubsub,
-      useEmulator: true,
-      topicPrefix: `test-${Date.now()}`,
-      cleanupOnClose: true,
-      closePubSubClient: false,
-    });
-  });
-
-  afterEach(async () => {
-    await messageBus.close();
-  });
-
-  afterAll(async () => {
-    await pubsub.close();
-  });
-
-  it('should send and receive commands', async () => {
-    const received: unknown[] = [];
-
-    messageBus.handle(async (cmd) => {
-      received.push(cmd);
-    }, 'TestCommand');
-
-    await messageBus.start();
-
-    await messageBus.send({
-      type: 'TestCommand',
-      data: { value: 42 },
-    });
-
-    // Wait for async delivery
-    await new Promise((r) => setTimeout(r, 500));
-
-    expect(received).toHaveLength(1);
-  });
-});
 ```
 
 ---

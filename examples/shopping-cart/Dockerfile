@@ -14,7 +14,6 @@ RUN npm run build
 COPY examples/shopping-cart/package*.json ./examples/shopping-cart/
 COPY examples/shopping-cart/tsconfig.json ./examples/shopping-cart/
 COPY examples/shopping-cart/src ./examples/shopping-cart/src
-COPY examples/shopping-cart/openapi.yml ./examples/shopping-cart/openapi.yml
 
 # Install example dependencies (resolves file:../.. against /app)
 RUN cd examples/shopping-cart && npm ci
@@ -34,7 +33,6 @@ COPY --from=builder /app/examples/shopping-cart/node_modules ./node_modules
 COPY --from=builder /app/examples/shopping-cart/src ./src
 COPY --from=builder /app/examples/shopping-cart/package*.json ./
 COPY --from=builder /app/examples/shopping-cart/tsconfig.json ./tsconfig.json
-COPY --from=builder /app/examples/shopping-cart/openapi.yml ./openapi.yml
 
 EXPOSE 3000
 

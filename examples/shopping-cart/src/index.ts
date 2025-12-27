@@ -138,7 +138,7 @@ const securityHandlers: SecurityHandlers = {
 // ============================================================
 // 7. ERROR MAPPING
 // ============================================================
-const openApiFilePath = path.join(__dirname, '../openapi.yml');
+const openApiFilePath = path.join(__dirname, 'openapi.yml');
 
 const errorStatusMap: Record<string, number> = {
   [ShoppingCartError.CART_CLOSED]: 403,

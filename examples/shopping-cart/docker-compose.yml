@@ -1,8 +1,6 @@
 services:
   firebase:
-    build:
-      context: .
-      dockerfile: Dockerfile.firebase
+    image: myfstartup/firebase-emulator-suite:15
     container_name: shopping-cart-firebase
     ports:
       - "8080:8080"  # Firestore
@@ -10,10 +8,10 @@ services:
       - "4000:4000"  # UI
       - "8085:8085"  # PubSub
     environment:
-      - FIRESTORE_PROJECT_ID=demo-project
+      - PROJECT_ID=demo-project
     volumes:
-      - ./firebase.json:/app/firebase.json:ro
-      - ./.firebaserc:/app/.firebaserc:ro
+      - ./test/support/firebase/firebase.json:/app/firebase.json:ro
+      - ./test/support/firebase/.firebaserc:/app/.firebaserc:ro
       - firestore-data:/opt/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:4000"]

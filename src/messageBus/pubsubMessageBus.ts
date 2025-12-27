@@ -556,15 +556,24 @@ export function getPubSubMessageBus(
           // Wait for in-flight messages with timeout (30 seconds)
           const timeout = 30000;
           const waitStart = Date.now();
+          let timeoutId: NodeJS.Timeout | null = null;
 
           // Close all subscriptions
           const closePromises = subscriptions.map(({ subscription }) =>
             subscription.close(),
           );
-          await Promise.race([
-            Promise.all(closePromises),
-            new Promise((resolve) => setTimeout(resolve, timeout)),
-          ]);
+          try {
+            await Promise.race([
+              Promise.all(closePromises),
+              new Promise((resolve) => {
+                timeoutId = setTimeout(resolve, timeout);
+              }),
+            ]);
+          } finally {
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+            }
+          }
 
           const waitTime = Date.now() - waitStart;
           if (waitTime >= timeout) {
