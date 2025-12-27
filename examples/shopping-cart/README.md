@@ -113,6 +113,8 @@ npm install
 
 #### Quick Start
 
+The Firebase emulators run from a Docker Hub image.
+
 ```bash
 # 1. Build the application locally
 npm install
@@ -243,8 +245,8 @@ npm test
 
 # Run specific test suites
 npm run test:unit        # Business logic tests
-npm run test:int         # Integration tests (with emulators)
-npm run test:e2e         # End-to-end tests
+npm run test:int         # Integration tests (in-memory)
+npm run test:e2e         # End-to-end tests (Testcontainers, requires Docker)
 
 # Watch mode
 npm run test:watch
@@ -334,6 +336,7 @@ curl http://localhost:3000/clients/test-client/shopping-carts/current/summary \
 examples/shopping-cart/
 ├── src/
 │   ├── index.ts                           # App initialization + wiring
+│   ├── openapi.yml                         # OpenAPI spec with GET endpoints
 │   ├── handlers/
 │   │   └── shoppingCarts.ts               # HTTP handlers (POST/DELETE/GET)
 │   └── shoppingCarts/
@@ -346,10 +349,15 @@ examples/shopping-cart/
 ├── test/
 │   ├── businessLogic.unit.spec.ts         # Business logic tests
 │   ├── handlers.int.spec.ts               # Integration tests
-│   └── handlers.e2e.spec.ts               # E2E tests
+│   ├── handlers.e2e.spec.ts               # E2E tests
+│   └── support/
+│       ├── firebase/
+│       │   ├── firebase.json              # Emulator config
+│       │   └── .firebaserc                # Emulator project
+│       ├── inMemoryFirestore.ts           # In-memory Firestore
+│       ├── inMemoryRealtimeDb.ts          # In-memory Realtime DB
+│       └── inMemoryPubSub.ts              # In-memory PubSub
 ├── docker-compose.yml                      # Firebase emulators
-├── firebase.json                           # Emulator config (Firestore + RTDB)
-├── openapi.yml                             # OpenAPI spec with GET endpoints
 └── .http                                   # Manual test requests
 ```
 
@@ -444,7 +452,7 @@ In production, replace with proper JWT validation.
 
 ## Environment Variables
 
-Create `.env` from `.env.example`:
+When running locally (without docker-compose), set:
 
 ```bash
 # Firestore
@@ -453,6 +461,10 @@ FIRESTORE_EMULATOR_HOST=localhost:8080
 
 # Realtime Database
 FIREBASE_DATABASE_EMULATOR_HOST=localhost:9000
+
+# PubSub
+PUBSUB_PROJECT_ID=demo-project
+PUBSUB_EMULATOR_HOST=localhost:8085
 
 # Application
 PORT=3000
@@ -484,7 +496,7 @@ docker-compose restart firebase
 
 ### Port Already in Use
 
-Change ports in `.env` and `docker-compose.yml` if 3000, 4000, 8080, or 9000 are already in use.
+Change ports in `docker-compose.yml` if 3000, 4000, 8080, 9000, or 8085 are already in use.
 
 ### Projection Not Updating
 

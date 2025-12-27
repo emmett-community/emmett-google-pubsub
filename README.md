@@ -2,26 +2,28 @@
 
 Google Cloud Pub/Sub message bus implementation for [Emmett](https://event-driven-io.github.io/emmett/), the Node.js event sourcing framework.
 
-[![npm version](https://img.shields.io/npm/v/@emmett-community/emmett-google-pubsub.svg)](https://www.npmjs.com/package/@emmett-community/emmett-google-pubsub)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![npm version](https://img.shields.io/npm/v/@emmett-community/emmett-google-pubsub.svg)](https://www.npmjs.com/package/@emmett-community/emmett-google-pubsub) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Features
 
-- **Distributed Message Bus** - Scale command/event handling across multiple instances
-- **Type-Safe** - Full TypeScript support with comprehensive types
-- **Automatic Topic Management** - Auto-creates topics and subscriptions
-- **Message Scheduling** - Schedule commands/events for future execution
-- **Error Handling** - Built-in retry logic and dead letter queue support
-- **Emulator Support** - Local development with PubSub emulator
-- **Testing Utilities** - Helper functions for easy testing
-- **Emmett Compatible** - Drop-in replacement for in-memory message bus
-- **Producer-Only Mode** - Use without starting consumers
+- ✅ **Distributed Message Bus** - Scale command/event handling across multiple instances
+- ✅ **Type-Safe** - Full TypeScript support with comprehensive types
+- ✅ **Automatic Topic Management** - Auto-creates topics and subscriptions
+- ✅ **Message Scheduling** - Schedule commands/events for future execution
+- ✅ **Error Handling** - Built-in retry logic and dead letter queue support
+- ✅ **Emulator Support** - Local development with PubSub emulator
+- ✅ **Emmett Compatible** - Drop-in replacement for in-memory message bus
+- ✅ **Producer-Only Mode** - Use without starting consumers
 
 ## Installation
 
 ```bash
 npm install @emmett-community/emmett-google-pubsub @google-cloud/pubsub
 ```
+
+### Peer Dependencies
+
+- `@event-driven-io/emmett` ^0.39.0
 
 ## Quick Start
 
@@ -259,19 +261,20 @@ describe('My Tests', () => {
 ### Running Tests
 
 ```bash
-# Start PubSub emulator
-gcloud beta emulators pubsub start --project=test-project
+# Unit tests
+npm run test:unit
 
-# Or use Docker
-docker run -p 8085:8085 gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators \
-  gcloud beta emulators pubsub start --host-port=0.0.0.0:8085
+# Integration tests (in-memory)
+npm run test:int
 
-# Set environment variable
-export PUBSUB_EMULATOR_HOST=localhost:8085
+# E2E tests (PubSub emulator via Testcontainers, requires Docker)
+npm run test:e2e
 
-# Run tests
+# All tests
 npm test
 ```
+
+E2E tests start the emulator automatically via Testcontainers.
 
 ## Examples
 
@@ -406,8 +409,11 @@ npm test
 # Run unit tests only
 npm run test:unit
 
-# Run integration tests (requires emulator)
+# Run integration tests (in-memory)
 npm run test:int
+
+# Run E2E tests (requires Docker)
+npm run test:e2e
 
 # Lint
 npm run lint
@@ -420,19 +426,18 @@ npm run format
 
 MIT
 
-## Resources
+## Related Packages
 
-- [Emmett Documentation](https://event-driven-io.github.io/emmett/)
-- [Google Cloud Pub/Sub Docs](https://cloud.google.com/pubsub/docs)
-- [GitHub Repository](https://github.com/emmett-community/emmett-google-pubsub)
+- [@event-driven-io/emmett](https://github.com/event-driven-io/emmett) - Core Emmett framework
+- [@emmett-community/emmett-google-firestore](https://github.com/emmett-community/emmett-google-firestore) - Firestore event store
+- [@emmett-community/emmett-google-realtime-db](https://github.com/emmett-community/emmett-google-realtime-db) - Realtime Database inline projections
+- [@event-driven-io/emmett-mongodb](https://github.com/event-driven-io/emmett/tree/main/src/packages/emmett-mongodb) - MongoDB event store
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/emmett-community/emmett-google-pubsub/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/emmett-community/emmett-google-pubsub/discussions)
-- **Emmett Discord**: [Join Discord](https://discord.gg/fTpqUTMmVa)
+- [GitHub Issues](https://github.com/emmett-community/emmett-google-pubsub/issues)
+- [Emmett Documentation](https://event-driven-io.github.io/emmett/)
 
-## Acknowledgments
+---
 
-- Built for the [Emmett](https://event-driven-io.github.io/emmett/) framework by [Oskar Dudycz](https://github.com/oskardudycz)
-- Part of the [Emmett Community](https://github.com/emmett-community)
+Made with ❤️ by the Emmett Community

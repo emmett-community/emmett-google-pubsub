@@ -1,20 +1,15 @@
-import { PubSub } from '@google-cloud/pubsub';
+import type { PubSub } from '@google-cloud/pubsub';
 import type { Command, Event } from '@event-driven-io/emmett';
 import { getPubSubMessageBus } from '../../src/messageBus/pubsubMessageBus';
 import type { PubSubMessageBusConfig } from '../../src/messageBus/types';
 import { generateUUID } from '../../src/messageBus/utils';
+import { InMemoryPubSub } from '../support/inMemoryPubSub';
 
 /**
  * Create a PubSub client configured for the emulator
  */
 export function getTestPubSub(): PubSub {
-  const projectId = process.env.PUBSUB_PROJECT_ID || 'test-project';
-  const emulatorHost = process.env.PUBSUB_EMULATOR_HOST || 'localhost:8085';
-
-  return new PubSub({
-    projectId,
-    apiEndpoint: emulatorHost,
-  });
+  return new InMemoryPubSub() as unknown as PubSub;
 }
 
 /**

@@ -13,6 +13,7 @@ import {
 } from '@emmett-community/emmett-expressjs-with-openapi';
 import admin from 'firebase-admin';
 import type { Database } from 'firebase-admin/database';
+import { GenericContainer, Wait } from 'testcontainers';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { after, before, beforeEach, describe, it } from 'node:test';
@@ -28,32 +29,105 @@ const __dirname = path.dirname(__filename);
 const waitForMessageDelivery = () =>
   new Promise((resolve) => setTimeout(resolve, 100));
 
+const projectId = 'demo-project';
+
+let emulator: import('testcontainers').StartedTestContainer | null = null;
+let emulatorHost = '';
+let firestorePort = 0;
+let databasePort = 0;
+let pubsubPort = 0;
+
+const emulatorUrl = () => `http://${emulatorHost}:${firestorePort}`;
+
+const startEmulator = async () => {
+  const container = await new GenericContainer(
+    'myfstartup/firebase-emulator-suite:15',
+  )
+    .withPlatform('linux/amd64')
+    .withExposedPorts(4000, 8080, 9000, 8085)
+    .withBindMounts([
+      {
+        source: path.join(
+          process.cwd(),
+          'test',
+          'support',
+          'firebase',
+          'firebase.json',
+        ),
+        target: '/app/firebase.json',
+        mode: 'ro' as const,
+      },
+      {
+        source: path.join(
+          process.cwd(),
+          'test',
+          'support',
+          'firebase',
+          '.firebaserc',
+        ),
+        target: '/app/.firebaserc',
+        mode: 'ro' as const,
+      },
+    ])
+    .withEnvironment({ PROJECT_ID: projectId })
+    .withWaitStrategy(Wait.forHttp('/', 4000).withStartupTimeout(120000))
+    .start();
+
+  emulatorHost = container.getHost();
+  firestorePort = container.getMappedPort(8080);
+  databasePort = container.getMappedPort(9000);
+  pubsubPort = container.getMappedPort(8085);
+
+  process.env.FIRESTORE_EMULATOR_HOST = `${emulatorHost}:${firestorePort}`;
+  process.env.FIRESTORE_PROJECT_ID = projectId;
+  process.env.GCLOUD_PROJECT = projectId;
+  process.env.FIREBASE_DATABASE_EMULATOR_HOST = `${emulatorHost}:${databasePort}`;
+  process.env.PUBSUB_EMULATOR_HOST = `${emulatorHost}:${pubsubPort}`;
+  process.env.PUBSUB_PROJECT_ID = projectId;
+
+  return container;
+};
+
+const resetFirestore = async () => {
+  const res = await fetch(
+    `${emulatorUrl()}/emulator/v1/projects/${projectId}/databases/(default)/documents`,
+    { method: 'DELETE' },
+  );
+
+  if (!res.ok) {
+    throw new Error(`Failed to reset Firestore emulator: ${res.status} ${res.statusText}`);
+  }
+};
+
 void describe('ShoppingCart e2e (OpenAPI)', () => {
   let clientId: string;
   let shoppingCartId: string;
   let given: ApiE2ESpecification;
   let database: Database;
   let firestore: Firestore;
+  let app: admin.app.App;
+  let messageBus: ReturnType<typeof getPubSubMessageBus>;
 
   before(async () => {
+    emulator = await startEmulator();
+
     firestore = new Firestore({
-      projectId: 'demo-project',
-      host: process.env.FIRESTORE_EMULATOR_HOST || 'localhost:8080',
+      projectId,
+      host: `${emulatorHost}:${firestorePort}`,
       ssl: false,
       customHeaders: {
         Authorization: 'Bearer owner',
       },
     });
 
-    // Initialize Firebase Admin SDK for Realtime Database
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        projectId: 'demo-project',
-        databaseURL: `http://${process.env.FIREBASE_DATABASE_EMULATOR_HOST || 'localhost:9000'}?ns=demo-project`,
-      });
-    }
-
-    database = admin.database();
+    app = admin.initializeApp(
+      {
+        projectId,
+        databaseURL: `http://${emulatorHost}:${databasePort}?ns=${projectId}`,
+      },
+      `shopping-cart-e2e-${Date.now()}`,
+    );
+    database = admin.database(app);
 
     const baseEventStore = getFirestoreEventStore(firestore);
     const eventStore = wireRealtimeDBProjections({
@@ -66,12 +140,13 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
     });
 
     const pubsub = new PubSub({
-      projectId: process.env.PUBSUB_PROJECT_ID || 'demo-project',
+      projectId,
+      apiEndpoint: `${emulatorHost}:${pubsubPort}`,
     });
 
-    const messageBus = getPubSubMessageBus({
+    messageBus = getPubSubMessageBus({
       pubsub,
-      useEmulator: !!process.env.PUBSUB_EMULATOR_HOST,
+      useEmulator: true,
       topicPrefix: 'shopping-cart-e2e',
       closePubSubClient: false,
     });
@@ -87,7 +162,7 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
       () =>
         getApplication({
           openApiValidator: createOpenApiValidatorOptions(
-            path.join(__dirname, '../openapi.yml'),
+            path.join(__dirname, '../src/openapi.yml'),
             {
               validateRequests: true,
               validateSecurity: true,
@@ -109,14 +184,18 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
   });
 
   after(async () => {
+    await messageBus.close();
     await firestore.terminate();
-    await admin.app().delete();
+    await app.delete();
+    if (emulator) {
+      await emulator.stop();
+    }
   });
 
   beforeEach(async () => {
     clientId = randomUUID();
     shoppingCartId = `shopping_cart:${clientId}:current`;
-    // Clear Realtime DB
+    await resetFirestore();
     await database.ref().remove();
   });
 
