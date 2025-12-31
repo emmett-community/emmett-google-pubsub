@@ -11,7 +11,9 @@ import type {
   SingleRawMessageHandlerWithoutContext,
 } from '@event-driven-io/emmett';
 import { EmmettError } from '@event-driven-io/emmett';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 import type {
+  Logger,
   PubSubMessageBusConfig,
   PubSubMessageBusLifecycle,
   SubscriptionInfo,
@@ -30,6 +32,9 @@ import {
 } from './topicManager';
 import { createMessageListener } from './messageHandler';
 import { generateUUID } from './utils';
+import { safeLog } from './observability';
+
+const tracer = trace.getTracer('@emmett-community/emmett-google-pubsub');
 
 /**
  * Determine message kind based on message type naming convention (fallback)
@@ -84,6 +89,9 @@ export function getPubSubMessageBus(
   CommandProcessor &
   ScheduledMessageProcessor &
   PubSubMessageBusLifecycle {
+  // Extract observability options
+  const logger: Logger | undefined = config.observability?.logger;
+
   // Internal state
   const instanceId = config.instanceId ?? generateUUID();
   const topicPrefix = config.topicPrefix ?? 'emmett';
@@ -189,11 +197,11 @@ export function getPubSubMessageBus(
           SingleRawMessageHandlerWithoutContext<AnyMessage>[]
         >();
         singleHandlerMap.set(messageType, [handler]);
-        createMessageListener(subscription, messageType, kind, singleHandlerMap);
+        createMessageListener(subscription, messageType, kind, singleHandlerMap, logger);
       }
     } else {
       // For commands, use the handlers map as before
-      createMessageListener(subscription, messageType, kind, handlers);
+      createMessageListener(subscription, messageType, kind, handlers, logger);
     }
 
     // Track subscription
@@ -215,16 +223,26 @@ export function getPubSubMessageBus(
     message: Message,
     kind: 'command' | 'event',
   ): Promise<void> {
-    // Publishing without start() is allowed (producer-only mode)
-    // start() is only required for consumers (handlers/subscribers)
+    const spanName = kind === 'command'
+      ? 'emmett.pubsub.send_command'
+      : 'emmett.pubsub.publish_event';
 
-    // Get topic name
-    const topicName =
-      kind === 'command'
-        ? getCommandTopicName(message.type, topicPrefix)
-        : getEventTopicName(message.type, topicPrefix);
+    const span = tracer.startSpan(spanName, {
+      attributes: { 'emmett.message.kind': kind },
+    });
 
     try {
+      // Publishing without start() is allowed (producer-only mode)
+      // start() is only required for consumers (handlers/subscribers)
+
+      // Get topic name
+      const topicName =
+        kind === 'command'
+          ? getCommandTopicName(message.type, topicPrefix)
+          : getEventTopicName(message.type, topicPrefix);
+
+      safeLog.debug(logger, 'Publishing message');
+
       // Get topic
       const topic = config.pubsub.topic(topicName);
 
@@ -255,12 +273,15 @@ export function getPubSubMessageBus(
           messageKind: kind,
         },
       });
+
+      span.setStatus({ code: SpanStatusCode.OK });
     } catch (error) {
-      throw new Error(
-        `Failed to publish ${kind} ${message.type} to topic ${topicName}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
+      span.recordException(error as Error);
+      span.setStatus({ code: SpanStatusCode.ERROR });
+      safeLog.error(logger, 'Failed to publish message', error);
+      throw error;
+    } finally {
+      span.end();
     }
   }
 
@@ -354,10 +375,7 @@ export function getPubSubMessageBus(
         // If already started, create subscription immediately
         if (started) {
           createSubscriptionForType(commandType, 'command').catch((error) => {
-            console.error(
-              `Failed to create subscription for command ${commandType}:`,
-              error instanceof Error ? error.message : String(error),
-            );
+            safeLog.error(logger, 'Failed to create subscription', error);
           });
         }
       }
@@ -418,10 +436,7 @@ export function getPubSubMessageBus(
         if (started) {
           createSubscriptionForType(eventType, 'event', subscriptionId).catch(
             (error) => {
-              console.error(
-                `Failed to create subscription for event ${eventType}:`,
-                error instanceof Error ? error.message : String(error),
-              );
+              safeLog.error(logger, 'Failed to create subscription', error);
             },
           );
         }
@@ -475,53 +490,59 @@ export function getPubSubMessageBus(
      * ```
      */
     async start(): Promise<void> {
-      if (started) {
-        console.debug('Message bus already started, skipping');
-        return;
-      }
+      return tracer.startActiveSpan('emmett.pubsub.start', async (span) => {
+        try {
+          if (started) {
+            safeLog.debug(logger, 'Message bus already started');
+            span.setStatus({ code: SpanStatusCode.OK });
+            return;
+          }
 
-      console.info('Starting PubSub message bus...');
+          safeLog.info(logger, 'Starting message bus');
 
-      try {
-        // Create subscriptions for all registered handlers
-        const subscriptionPromises: Promise<void>[] = [];
+          // Create subscriptions for all registered handlers
+          const subscriptionPromises: Promise<void>[] = [];
 
-        for (const [messageType] of handlers.entries()) {
-          const kind = determineMessageKind(messageType);
+          for (const [messageType] of handlers.entries()) {
+            const kind = determineMessageKind(messageType);
 
-          if (kind === 'command') {
-            // Commands: one subscription per instance
-            subscriptionPromises.push(
-              createSubscriptionForType(messageType, 'command'),
-            );
-          } else {
-            // Events: one subscription per handler (multiple allowed)
-            const subIds = eventSubscriptionIds.get(messageType) ?? [
-              instanceId,
-            ];
-            for (const subId of subIds) {
+            if (kind === 'command') {
+              // Commands: one subscription per instance
               subscriptionPromises.push(
-                createSubscriptionForType(messageType, 'event', subId),
+                createSubscriptionForType(messageType, 'command'),
               );
+            } else {
+              // Events: one subscription per handler (multiple allowed)
+              const subIds = eventSubscriptionIds.get(messageType) ?? [
+                instanceId,
+              ];
+              for (const subId of subIds) {
+                subscriptionPromises.push(
+                  createSubscriptionForType(messageType, 'event', subId),
+                );
+              }
             }
           }
+
+          // Wait for all subscriptions to be created
+          await Promise.all(subscriptionPromises);
+
+          started = true;
+
+          safeLog.info(logger, 'Message bus started');
+          span.setStatus({ code: SpanStatusCode.OK });
+        } catch (error) {
+          span.recordException(error as Error);
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          throw new Error(
+            `Failed to start message bus: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        } finally {
+          span.end();
         }
-
-        // Wait for all subscriptions to be created
-        await Promise.all(subscriptionPromises);
-
-        started = true;
-
-        console.info(
-          `PubSub message bus started with ${subscriptions.length} subscription(s)`,
-        );
-      } catch (error) {
-        throw new Error(
-          `Failed to start message bus: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
+      });
     },
 
     /**
@@ -542,68 +563,73 @@ export function getPubSubMessageBus(
      * ```
      */
     async close(): Promise<void> {
-      console.info('Closing PubSub message bus...');
+      return tracer.startActiveSpan('emmett.pubsub.close', async (span) => {
+        try {
+          safeLog.info(logger, 'Closing message bus');
 
-      try {
-        // Only cleanup subscriptions if started
-        if (started) {
-          // Stop accepting new messages
-          for (const { subscription } of subscriptions) {
-            subscription.removeAllListeners('message');
-            subscription.removeAllListeners('error');
-          }
-
-          // Wait for in-flight messages with timeout (30 seconds)
-          const timeout = 30000;
-          const waitStart = Date.now();
-          let timeoutId: NodeJS.Timeout | null = null;
-
-          // Close all subscriptions
-          const closePromises = subscriptions.map(({ subscription }) =>
-            subscription.close(),
-          );
-          try {
-            await Promise.race([
-              Promise.all(closePromises),
-              new Promise((resolve) => {
-                timeoutId = setTimeout(resolve, timeout);
-              }),
-            ]);
-          } finally {
-            if (timeoutId) {
-              clearTimeout(timeoutId);
+          // Only cleanup subscriptions if started
+          if (started) {
+            // Stop accepting new messages
+            for (const { subscription } of subscriptions) {
+              subscription.removeAllListeners('message');
+              subscription.removeAllListeners('error');
             }
-          }
 
-          const waitTime = Date.now() - waitStart;
-          if (waitTime >= timeout) {
-            console.warn(
-              `Timeout waiting for in-flight messages after ${timeout}ms`,
+            // Wait for in-flight messages with timeout (30 seconds)
+            const timeout = 30000;
+            const waitStart = Date.now();
+            let timeoutId: NodeJS.Timeout | null = null;
+
+            // Close all subscriptions
+            const closePromises = subscriptions.map(({ subscription }) =>
+              subscription.close(),
             );
+            try {
+              await Promise.race([
+                Promise.all(closePromises),
+                new Promise((resolve) => {
+                  timeoutId = setTimeout(resolve, timeout);
+                }),
+              ]);
+            } finally {
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+            }
+
+            const waitTime = Date.now() - waitStart;
+            if (waitTime >= timeout) {
+              safeLog.warn(logger, 'Timeout waiting for in-flight messages');
+            }
+
+            // Cleanup subscriptions if configured
+            if (cleanupOnClose) {
+              safeLog.debug(logger, 'Cleaning up subscriptions');
+              await deleteSubscriptions(subscriptions.map((s) => s.subscription), logger);
+            }
+
+            started = false;
           }
 
-          // Cleanup subscriptions if configured
-          if (cleanupOnClose) {
-            console.info('Cleaning up subscriptions...');
-            await deleteSubscriptions(subscriptions.map((s) => s.subscription));
+          // Always close PubSub client (even if not started, for producer-only mode)
+          if (closePubSubClient !== false) {
+            await config.pubsub.close();
           }
 
-          started = false;
+          safeLog.info(logger, 'Message bus closed');
+          span.setStatus({ code: SpanStatusCode.OK });
+        } catch (error) {
+          span.recordException(error as Error);
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          throw new Error(
+            `Failed to close message bus: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        } finally {
+          span.end();
         }
-
-        // Always close PubSub client (even if not started, for producer-only mode)
-        if (closePubSubClient !== false) {
-          await config.pubsub.close();
-        }
-
-        console.info('PubSub message bus closed');
-      } catch (error) {
-        throw new Error(
-          `Failed to close message bus: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
+      });
     },
 
     /**

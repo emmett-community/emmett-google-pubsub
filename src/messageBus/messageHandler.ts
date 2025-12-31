@@ -6,7 +6,12 @@ import type {
   SingleRawMessageHandlerWithoutContext,
 } from '@event-driven-io/emmett';
 import { EmmettError } from '@event-driven-io/emmett';
+import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { deserialize } from './serialization';
+import { safeLog } from './observability';
+import type { Logger } from './types';
+
+const tracer = trace.getTracer('@emmett-community/emmett-google-pubsub');
 
 /**
  * Determine if an error should trigger a retry (nack) or be considered permanent (ack)
@@ -57,13 +62,19 @@ export function shouldRetry(error: unknown): boolean {
  * @param message - The PubSub message
  * @param handlers - Map of message type to handlers
  * @param commandType - The command type being processed
+ * @param logger - Optional logger for observability
  * @returns 'ack' if successful or permanent failure, 'nack' if retriable failure
  */
 export async function handleCommandMessage(
   message: PubSubMessage,
   handlers: Map<string, SingleRawMessageHandlerWithoutContext<AnyMessage>[]>,
   commandType: string,
+  logger?: Logger,
 ): Promise<'ack' | 'nack'> {
+  const span = tracer.startSpan('emmett.pubsub.handle_command', {
+    attributes: { 'emmett.message.kind': 'command' },
+  });
+
   try {
     // Get handlers for this command type
     const commandHandlers = handlers.get(commandType);
@@ -89,25 +100,23 @@ export async function handleCommandMessage(
     const handler = commandHandlers[0];
     await handler(command);
 
+    span.setStatus({ code: SpanStatusCode.OK });
     return 'ack';
   } catch (error) {
-    console.error(
-      `Error handling command ${commandType}:`,
-      error instanceof Error ? error.message : String(error),
-    );
+    safeLog.error(logger, 'Command handler failed', error);
 
     // Determine if we should retry
     if (shouldRetry(error)) {
-      console.info(
-        `Nacking command ${commandType} for retry (delivery attempt: ${message.deliveryAttempt})`,
-      );
+      safeLog.info(logger, 'Nacking command for retry');
+      span.setStatus({ code: SpanStatusCode.OK });
       return 'nack';
     } else {
-      console.warn(
-        `Acking command ${commandType} despite error (permanent failure)`,
-      );
+      safeLog.warn(logger, 'Acking command despite error');
+      span.setStatus({ code: SpanStatusCode.OK });
       return 'ack';
     }
+  } finally {
+    span.end();
   }
 }
 
@@ -117,20 +126,27 @@ export async function handleCommandMessage(
  * @param message - The PubSub message
  * @param handlers - Map of message type to handlers
  * @param eventType - The event type being processed
+ * @param logger - Optional logger for observability
  * @returns 'ack' if all handlers successful or permanent failure, 'nack' if retriable failure
  */
 export async function handleEventMessage(
   message: PubSubMessage,
   handlers: Map<string, SingleRawMessageHandlerWithoutContext<AnyMessage>[]>,
   eventType: string,
+  logger?: Logger,
 ): Promise<'ack' | 'nack'> {
+  const span = tracer.startSpan('emmett.pubsub.handle_event', {
+    attributes: { 'emmett.message.kind': 'event' },
+  });
+
   try {
     // Get handlers for this event type
     const eventHandlers = handlers.get(eventType);
 
     if (!eventHandlers || eventHandlers.length === 0) {
       // Events without handlers are silently ignored (valid scenario)
-      console.debug(`No handlers registered for event ${eventType}, skipping`);
+      safeLog.debug(logger, 'No handlers registered for event');
+      span.setStatus({ code: SpanStatusCode.OK });
       return 'ack';
     }
 
@@ -142,38 +158,34 @@ export async function handleEventMessage(
       try {
         await handler(event);
       } catch (error) {
-        console.error(
-          `Error in event handler for ${eventType}:`,
-          error instanceof Error ? error.message : String(error),
-        );
+        safeLog.error(logger, 'Event handler failed', error);
 
         // If any handler fails with a retriable error, nack the whole message
         if (shouldRetry(error)) {
-          console.info(
-            `Nacking event ${eventType} for retry due to handler failure (delivery attempt: ${message.deliveryAttempt})`,
-          );
+          safeLog.info(logger, 'Nacking event for retry');
+          span.setStatus({ code: SpanStatusCode.OK });
           return 'nack';
         }
         // Otherwise continue to next handler
-        console.warn(
-          `Continuing event ${eventType} processing despite handler error (permanent failure)`,
-        );
+        safeLog.warn(logger, 'Continuing event processing despite error');
       }
     }
 
+    span.setStatus({ code: SpanStatusCode.OK });
     return 'ack';
   } catch (error) {
     // Error deserializing or other unexpected error
-    console.error(
-      `Error handling event ${eventType}:`,
-      error instanceof Error ? error.message : String(error),
-    );
+    safeLog.error(logger, 'Event handling failed', error);
 
     if (shouldRetry(error)) {
+      span.setStatus({ code: SpanStatusCode.OK });
       return 'nack';
     } else {
+      span.setStatus({ code: SpanStatusCode.OK });
       return 'ack';
     }
+  } finally {
+    span.end();
   }
 }
 
@@ -184,20 +196,22 @@ export async function handleEventMessage(
  * @param messageType - The message type (command or event type)
  * @param kind - Whether this is a command or event
  * @param handlers - Map of message type to handlers
+ * @param logger - Optional logger for observability
  */
 export function createMessageListener(
   subscription: Subscription,
   messageType: string,
   kind: 'command' | 'event',
   handlers: Map<string, SingleRawMessageHandlerWithoutContext<AnyMessage>[]>,
+  logger?: Logger,
 ): void {
   subscription.on('message', async (message: PubSubMessage) => {
     try {
       // Route to appropriate handler based on kind
       const result =
         kind === 'command'
-          ? await handleCommandMessage(message, handlers, messageType)
-          : await handleEventMessage(message, handlers, messageType);
+          ? await handleCommandMessage(message, handlers, messageType, logger)
+          : await handleEventMessage(message, handlers, messageType, logger);
 
       // Acknowledge or nack based on result
       if (result === 'ack') {
@@ -207,18 +221,12 @@ export function createMessageListener(
       }
     } catch (error) {
       // Unexpected error in listener itself - log and nack
-      console.error(
-        `Unexpected error in message listener for ${messageType}:`,
-        error instanceof Error ? error.message : String(error),
-      );
+      safeLog.error(logger, 'Unexpected error in message listener', error);
       message.nack();
     }
   });
 
   subscription.on('error', (error) => {
-    console.error(
-      `Subscription error for ${messageType}:`,
-      error instanceof Error ? error.message : String(error),
-    );
+    safeLog.error(logger, 'Subscription error', error);
   });
 }

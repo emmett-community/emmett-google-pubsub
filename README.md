@@ -378,6 +378,56 @@ JavaScript `Date` objects are preserved through serialization:
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for design decisions.
 
+## Observability
+
+The package supports optional observability through structured logging and OpenTelemetry tracing.
+
+### Logging
+
+Logging is opt-in and completely silent by default. To enable logging, provide a logger:
+
+```typescript
+const messageBus = getPubSubMessageBus({
+  pubsub,
+  observability: {
+    logger: {
+      debug: (msg, data) => console.debug(msg, data),
+      info: (msg, data) => console.info(msg, data),
+      warn: (msg, data) => console.warn(msg, data),
+      error: (msg, err) => console.error(msg, err),
+    },
+  },
+});
+```
+
+**Log Levels:**
+
+- `info` - Lifecycle events (start, stop)
+- `debug` - External I/O operations (publish, subscribe)
+- `warn` - Recoverable failures (timeouts, retries)
+- `error` - Failures (with Error objects)
+
+### Tracing (OpenTelemetry)
+
+The package creates OpenTelemetry spans for key operations. Tracing is passive - the `@opentelemetry/api` is a no-op by default.
+
+To enable tracing, configure OpenTelemetry in your application:
+
+```typescript
+import { NodeSDK } from '@opentelemetry/sdk-node';
+const sdk = new NodeSDK({ /* config */ });
+sdk.start();
+
+// Spans from emmett-google-pubsub are now captured
+const messageBus = getPubSubMessageBus({ pubsub });
+```
+
+**Notes:**
+
+- The package never initializes OpenTelemetry
+- No tracing flags needed - spans are always created (no-op if SDK not initialized)
+- Message types and payloads are never included in spans or logs
+
 ## Compatibility
 
 - **Node.js**: >= 18.0.0
