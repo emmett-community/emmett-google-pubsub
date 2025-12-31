@@ -13,6 +13,19 @@ import {
   createMessageListener,
 } from '../../src/messageBus/messageHandler';
 import { serialize } from '../../src/messageBus/serialization';
+import type { Logger } from '../../src/messageBus/types';
+
+const createMockLogger = (): Logger & {
+  debug: jest.Mock;
+  info: jest.Mock;
+  warn: jest.Mock;
+  error: jest.Mock;
+} => ({
+  debug: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+});
 
 describe('MessageHandler', () => {
   describe('shouldRetry', () => {
@@ -107,10 +120,7 @@ describe('MessageHandler', () => {
     });
 
     it('should return ack when handler throws EmmettError', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const logger = createMockLogger();
 
       const handler = jest
         .fn()
@@ -130,21 +140,16 @@ describe('MessageHandler', () => {
         message,
         handlers,
         'TestCommand',
+        logger,
       );
 
       expect(result).toBe('ack');
-      expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleWarnSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleWarnSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalled();
     });
 
     it('should return nack when handler throws network error', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation();
+      const logger = createMockLogger();
 
       const handler = jest.fn().mockRejectedValue(new Error('Network error'));
       const handlers = new Map<
@@ -162,21 +167,16 @@ describe('MessageHandler', () => {
         message,
         handlers,
         'TestCommand',
+        logger,
       );
 
       expect(result).toBe('nack');
-      expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleInfoSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleInfoSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalled();
     });
 
     it('should throw EmmettError when no handler registered', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const logger = createMockLogger();
 
       const handlers = new Map<
         string,
@@ -193,20 +193,15 @@ describe('MessageHandler', () => {
         message,
         handlers,
         'TestCommand',
+        logger,
       );
 
       expect(result).toBe('ack'); // Acked because it's a permanent error
-      expect(consoleErrorSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleWarnSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalled();
     });
 
     it('should throw EmmettError when multiple handlers registered', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const logger = createMockLogger();
 
       const handler1 = jest.fn().mockResolvedValue(undefined);
       const handler2 = jest.fn().mockResolvedValue(undefined);
@@ -225,13 +220,11 @@ describe('MessageHandler', () => {
         message,
         handlers,
         'TestCommand',
+        logger,
       );
 
       expect(result).toBe('ack'); // Acked because it's a permanent error
-      expect(consoleErrorSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleWarnSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalled();
     });
   });
 
@@ -278,9 +271,7 @@ describe('MessageHandler', () => {
     });
 
     it('should return ack when no handlers registered', async () => {
-      const consoleDebugSpy = jest
-        .spyOn(console, 'debug')
-        .mockImplementation();
+      const logger = createMockLogger();
 
       const handlers = new Map<
         string,
@@ -293,19 +284,19 @@ describe('MessageHandler', () => {
       };
       const message = createMockMessage(event);
 
-      const result = await handleEventMessage(message, handlers, 'TestEvent');
+      const result = await handleEventMessage(
+        message,
+        handlers,
+        'TestEvent',
+        logger,
+      );
 
       expect(result).toBe('ack');
-      expect(consoleDebugSpy).toHaveBeenCalled();
-
-      consoleDebugSpy.mockRestore();
+      expect(logger.debug).toHaveBeenCalled();
     });
 
     it('should return nack when handler throws retriable error', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation();
+      const logger = createMockLogger();
 
       const handler = jest.fn().mockRejectedValue(new Error('Network error'));
       const handlers = new Map<
@@ -319,21 +310,20 @@ describe('MessageHandler', () => {
       };
       const message = createMockMessage(event);
 
-      const result = await handleEventMessage(message, handlers, 'TestEvent');
+      const result = await handleEventMessage(
+        message,
+        handlers,
+        'TestEvent',
+        logger,
+      );
 
       expect(result).toBe('nack');
-      expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleInfoSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleInfoSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalled();
     });
 
     it('should continue processing when handler throws non-retriable error', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation();
+      const logger = createMockLogger();
 
       const handler1 = jest
         .fn()
@@ -350,16 +340,18 @@ describe('MessageHandler', () => {
       };
       const message = createMockMessage(event);
 
-      const result = await handleEventMessage(message, handlers, 'TestEvent');
+      const result = await handleEventMessage(
+        message,
+        handlers,
+        'TestEvent',
+        logger,
+      );
 
       expect(result).toBe('ack');
       expect(handler1).toHaveBeenCalled();
       expect(handler2).toHaveBeenCalled();
-      expect(consoleErrorSpy).toHaveBeenCalled();
-      expect(consoleWarnSpy).toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleWarnSpy.mockRestore();
+      expect(logger.error).toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalled();
     });
 
     it('should execute handlers sequentially', async () => {
@@ -470,11 +462,6 @@ describe('MessageHandler', () => {
     });
 
     it('should nack message on retriable error', async () => {
-      const consoleErrorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation();
-      const consoleInfoSpy = jest.spyOn(console, 'info').mockImplementation();
-
       const mockAck = jest.fn();
       const mockNack = jest.fn();
       const mockOn = jest.fn();
@@ -512,9 +499,6 @@ describe('MessageHandler', () => {
 
       expect(mockNack).toHaveBeenCalled();
       expect(mockAck).not.toHaveBeenCalled();
-
-      consoleErrorSpy.mockRestore();
-      consoleInfoSpy.mockRestore();
     });
   });
 });

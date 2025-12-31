@@ -1,5 +1,6 @@
 import type { PubSub, Subscription, Topic } from '@google-cloud/pubsub';
-import type { SubscriptionOptions } from './types';
+import type { Logger, SubscriptionOptions } from './types';
+import { safeLog } from './observability';
 
 /**
  * Get command topic name
@@ -142,9 +143,11 @@ export async function getOrCreateSubscription(
  * Delete a subscription
  *
  * @param subscription - The subscription to delete
+ * @param logger - Optional logger for observability
  */
 export async function deleteSubscription(
   subscription: Subscription,
+  logger?: Logger,
 ): Promise<void> {
   try {
     const [exists] = await subscription.exists();
@@ -154,9 +157,7 @@ export async function deleteSubscription(
     }
   } catch (error) {
     // Log but don't throw - cleanup is best effort
-    console.warn(
-      `Failed to delete subscription: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    safeLog.warn(logger, 'Failed to delete subscription', error);
   }
 }
 
@@ -164,9 +165,11 @@ export async function deleteSubscription(
  * Delete multiple subscriptions
  *
  * @param subscriptions - Array of subscriptions to delete
+ * @param logger - Optional logger for observability
  */
 export async function deleteSubscriptions(
   subscriptions: Subscription[],
+  logger?: Logger,
 ): Promise<void> {
-  await Promise.all(subscriptions.map((sub) => deleteSubscription(sub)));
+  await Promise.all(subscriptions.map((sub) => deleteSubscription(sub, logger)));
 }

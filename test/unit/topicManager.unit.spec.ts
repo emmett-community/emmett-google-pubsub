@@ -9,6 +9,19 @@ import {
   deleteSubscription,
   deleteSubscriptions,
 } from '../../src/messageBus/topicManager';
+import type { Logger } from '../../src/messageBus/types';
+
+const createMockLogger = (): Logger & {
+  debug: jest.Mock;
+  info: jest.Mock;
+  warn: jest.Mock;
+  error: jest.Mock;
+} => ({
+  debug: jest.fn(),
+  info: jest.fn(),
+  warn: jest.fn(),
+  error: jest.fn(),
+});
 
 describe('TopicManager', () => {
   describe('Naming conventions', () => {
@@ -250,9 +263,7 @@ describe('TopicManager', () => {
       });
 
       it('should not throw on delete error', async () => {
-        const consoleWarnSpy = jest
-          .spyOn(console, 'warn')
-          .mockImplementation(() => {});
+        const logger = createMockLogger();
 
         const mockSubscription = {
           exists: jest.fn().mockResolvedValue([true]),
@@ -260,12 +271,10 @@ describe('TopicManager', () => {
         } as unknown as Subscription;
 
         await expect(
-          deleteSubscription(mockSubscription),
+          deleteSubscription(mockSubscription, logger),
         ).resolves.toBeUndefined();
 
-        expect(consoleWarnSpy).toHaveBeenCalled();
-
-        consoleWarnSpy.mockRestore();
+        expect(logger.warn).toHaveBeenCalled();
       });
     });
 

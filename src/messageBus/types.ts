@@ -2,6 +2,27 @@ import type { PubSub, Subscription, Topic } from '@google-cloud/pubsub';
 import type { Message, SingleMessageHandler } from '@event-driven-io/emmett';
 
 /**
+ * Minimal logger interface compatible with Pino, Winston, console.
+ * All methods are optional to support partial implementations.
+ */
+export interface Logger {
+  debug?(msg: string, data?: unknown): void;
+  info?(msg: string, data?: unknown): void;
+  warn?(msg: string, data?: unknown): void;
+  error?(msg: string, err?: unknown): void;
+}
+
+/**
+ * Observability configuration options.
+ */
+export interface ObservabilityOptions {
+  /**
+   * Optional logger instance. When not provided, the library operates silently.
+   */
+  logger?: Logger;
+}
+
+/**
  * Configuration for PubSub MessageBus
  */
 export interface PubSubMessageBusConfig {
@@ -50,6 +71,12 @@ export interface PubSubMessageBusConfig {
    * @default true
    */
   closePubSubClient?: boolean;
+
+  /**
+   * Observability options (logging).
+   * If not provided, the package remains silent.
+   */
+  observability?: ObservabilityOptions;
 }
 
 /**
