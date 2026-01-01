@@ -48,9 +48,14 @@ describe('PubSubMessageBus Observability', () => {
   });
 
   describe('with logger configured', () => {
-    it('should log lifecycle events at info level with stable messages', async () => {
+    it('should log lifecycle events at info level with (context, message) format', async () => {
       const infoMock = jest.fn();
-      const logger: Logger = { info: infoMock };
+      const logger: Logger = {
+        debug: jest.fn(),
+        info: infoMock,
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
 
       const pubsub = new InMemoryPubSub();
       const messageBus = getPubSubMessageBus({
@@ -62,20 +67,20 @@ describe('PubSubMessageBus Observability', () => {
       await messageBus.start();
       await messageBus.close();
 
-      // Verify stable log messages (no variable data in message text)
-      expect(infoMock).toHaveBeenCalledWith('Starting message bus', undefined);
-      expect(infoMock).toHaveBeenCalledWith('Message bus started', undefined);
-      expect(infoMock).toHaveBeenCalledWith('Closing message bus', undefined);
-      expect(infoMock).toHaveBeenCalledWith('Message bus closed', undefined);
+      // Verify (context, message) format - context is first, message is second
+      expect(infoMock).toHaveBeenCalledWith({}, 'Starting message bus');
+      expect(infoMock).toHaveBeenCalledWith({}, 'Message bus started');
+      expect(infoMock).toHaveBeenCalledWith({}, 'Closing message bus');
+      expect(infoMock).toHaveBeenCalledWith({}, 'Message bus closed');
     });
 
     it('should never log message types, payloads, or high-cardinality data', async () => {
-      const allLogs: string[] = [];
+      const allLogs: unknown[][] = [];
       const logger: Logger = {
-        debug: (msg, data) => allLogs.push(JSON.stringify({ msg, data })),
-        info: (msg, data) => allLogs.push(JSON.stringify({ msg, data })),
-        warn: (msg, data) => allLogs.push(JSON.stringify({ msg, data })),
-        error: (msg, data) => allLogs.push(JSON.stringify({ msg, data })),
+        debug: (...args: unknown[]) => allLogs.push(['debug', ...args]),
+        info: (...args: unknown[]) => allLogs.push(['info', ...args]),
+        warn: (...args: unknown[]) => allLogs.push(['warn', ...args]),
+        error: (...args: unknown[]) => allLogs.push(['error', ...args]),
       };
 
       const pubsub = new InMemoryPubSub();
@@ -95,7 +100,7 @@ describe('PubSubMessageBus Observability', () => {
       await messageBus.send(sensitiveCommand);
       await messageBus.close();
 
-      const logOutput = allLogs.join(' ');
+      const logOutput = JSON.stringify(allLogs);
       // Must not contain message type
       expect(logOutput).not.toContain('SecretCommand');
       // Must not contain payload data
@@ -109,9 +114,14 @@ describe('PubSubMessageBus Observability', () => {
       expect(logOutput).not.toContain('topicName');
     });
 
-    it('should log at debug level when publishing messages', async () => {
+    it('should log at debug level when publishing messages with (context, message) format', async () => {
       const debugMock = jest.fn();
-      const logger: Logger = { debug: debugMock };
+      const logger: Logger = {
+        debug: debugMock,
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
 
       const pubsub = new InMemoryPubSub();
       const messageBus = getPubSubMessageBus({
@@ -124,30 +134,17 @@ describe('PubSubMessageBus Observability', () => {
       await messageBus.send({ type: 'TestCommand', data: {} });
       await messageBus.close();
 
-      expect(debugMock).toHaveBeenCalledWith('Publishing message', undefined);
+      expect(debugMock).toHaveBeenCalledWith({}, 'Publishing message');
     });
 
-    it('should use partial logger without errors', async () => {
-      const warnMock = jest.fn();
-      const partialLogger: Logger = { warn: warnMock };
-
-      const pubsub = new InMemoryPubSub();
-      const messageBus = getPubSubMessageBus({
-        pubsub: pubsub as never,
-        useEmulator: true,
-        observability: { logger: partialLogger },
-      });
-
-      await messageBus.start();
-      await messageBus.send({ type: 'TestCommand', data: {} });
-      await messageBus.close();
-
-      // Should not throw - other log levels silently no-op
-    });
-
-    it('should log debug when bus already started', async () => {
+    it('should log debug when bus already started with (context, message) format', async () => {
       const debugMock = jest.fn();
-      const logger: Logger = { debug: debugMock };
+      const logger: Logger = {
+        debug: debugMock,
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
 
       const pubsub = new InMemoryPubSub();
       const messageBus = getPubSubMessageBus({
@@ -160,10 +157,7 @@ describe('PubSubMessageBus Observability', () => {
       await messageBus.start(); // Call again
       await messageBus.close();
 
-      expect(debugMock).toHaveBeenCalledWith(
-        'Message bus already started',
-        undefined,
-      );
+      expect(debugMock).toHaveBeenCalledWith({}, 'Message bus already started');
     });
   });
 });

@@ -2,14 +2,34 @@ import type { PubSub, Subscription, Topic } from '@google-cloud/pubsub';
 import type { Message, SingleMessageHandler } from '@event-driven-io/emmett';
 
 /**
- * Minimal logger interface compatible with Pino, Winston, console.
- * All methods are optional to support partial implementations.
+ * Canonical Logger contract for the Emmett ecosystem.
+ *
+ * DO NOT MODIFY this interface without updating ALL packages in the ecosystem.
+ *
+ * This package defines the canonical Logger interface.
+ * Implementations (Pino, Winston, etc.) MUST adapt to this contract.
+ * This contract MUST NOT adapt to any specific implementation.
+ *
+ * Semantic Rules:
+ * - context (first parameter): ALWAYS structured data as Record<string, unknown>
+ * - message (second parameter): ALWAYS the human-readable log message
+ * - The order is NEVER inverted
+ * - The (message, data) form is NOT valid for this contract
+ * - Error objects MUST use the 'err' key (frozen semantic)
+ *
+ * @example
+ * ```typescript
+ * // Pino - native compatibility
+ * import pino from 'pino';
+ * const logger = pino();
+ * // logger.info({ orderId }, 'Order created') matches our contract
+ * ```
  */
 export interface Logger {
-  debug?(msg: string, data?: unknown): void;
-  info?(msg: string, data?: unknown): void;
-  warn?(msg: string, data?: unknown): void;
-  error?(msg: string, err?: unknown): void;
+  debug(context: Record<string, unknown>, message?: string): void;
+  info(context: Record<string, unknown>, message?: string): void;
+  warn(context: Record<string, unknown>, message?: string): void;
+  error(context: Record<string, unknown>, message?: string): void;
 }
 
 /**
