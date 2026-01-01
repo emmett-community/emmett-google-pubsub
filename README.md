@@ -384,28 +384,37 @@ The package supports optional observability through structured logging and OpenT
 
 ### Logging
 
-Logging is opt-in and completely silent by default. To enable logging, provide a logger:
+Logging is opt-in and completely silent by default. To enable logging, provide a logger that implements the canonical `(context, message)` contract:
 
 ```typescript
 const messageBus = getPubSubMessageBus({
   pubsub,
   observability: {
     logger: {
-      debug: (msg, data) => console.debug(msg, data),
-      info: (msg, data) => console.info(msg, data),
-      warn: (msg, data) => console.warn(msg, data),
-      error: (msg, err) => console.error(msg, err),
+      debug: (context, message) => console.debug(message, context),
+      info: (context, message) => console.info(message, context),
+      warn: (context, message) => console.warn(message, context),
+      error: (context, message) => console.error(message, context),
     },
   },
 });
 ```
+
+**Logger Contract:**
+
+The logger MUST implement the canonical `(context, message)` contract:
+
+- `context`: Structured data as `Record<string, unknown>` (first parameter)
+- `message`: Human-readable log message (second parameter, optional)
+
+Pino is natively compatible. For Winston, use an adapter.
 
 **Log Levels:**
 
 - `info` - Lifecycle events (start, stop)
 - `debug` - External I/O operations (publish, subscribe)
 - `warn` - Recoverable failures (timeouts, retries)
-- `error` - Failures (with Error objects)
+- `error` - Failures (with Error objects in `{ err: error }` format)
 
 ### Tracing (OpenTelemetry)
 

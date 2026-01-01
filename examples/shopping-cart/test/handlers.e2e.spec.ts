@@ -130,7 +130,8 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
     database = admin.database(app);
 
     const baseEventStore = getFirestoreEventStore(firestore);
-    const eventStore = wireRealtimeDBProjections({
+    // @ts-ignore - Type compatibility issue between Firestore and generic EventStore
+    const eventStore = wireRealtimeDBProjections<typeof baseEventStore>({
       eventStore: baseEventStore,
       database,
       projections: [
@@ -158,7 +159,8 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
     const getCurrentTime = () => new Date();
 
     given = ApiE2ESpecification.for(
-      () => eventStore,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      () => eventStore as any,
       () =>
         getApplication({
           openApiValidator: createOpenApiValidatorOptions(
@@ -310,7 +312,7 @@ void describe('ShoppingCart e2e (OpenAPI)', () => {
             `/clients/${clientId}/shopping-carts/current/confirm`,
           ),
         ),
-      );
+      ) as any;
 
     void it('returns 404 when getting details (projection filtered)', async () => {
       await given(confirmedShoppingCart);

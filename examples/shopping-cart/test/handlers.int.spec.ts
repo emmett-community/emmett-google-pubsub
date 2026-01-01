@@ -303,14 +303,15 @@ void describe('ShoppingCart integration (OpenAPI)', () => {
       const baseEventStore = getFirestoreEventStore(
         firestore as unknown as Firestore,
       );
-      return wireRealtimeDBProjections({
+      // @ts-ignore - Type compatibility issue between Firestore and generic EventStore
+      return wireRealtimeDBProjections<typeof baseEventStore>({
         eventStore: baseEventStore,
         database,
         projections: [
           shoppingCartDetailsProjection,
           shoppingCartShortInfoProjection,
         ],
-      });
+      }) as any;
     },
     (eventStore) => {
       return getApplication({

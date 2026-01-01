@@ -12,5 +12,4 @@ export * from './topicManager';
 export * from './utils';
 export * from './scheduler';
 export * from './messageHandler';
-export * from './observability';
 export * from './pubsubMessageBus';
