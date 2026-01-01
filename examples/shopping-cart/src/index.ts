@@ -14,6 +14,7 @@ import {
   type ImportedHandlerModules,
   type SecurityHandlers,
 } from '@emmett-community/emmett-expressjs-with-openapi';
+import { createLogger } from '@emmett-community/emmett-observability';
 import type { Application } from 'express';
 import admin from 'firebase-admin';
 import path from 'node:path';
@@ -36,6 +37,15 @@ const FIRESTORE_EMULATOR_HOST = process.env.FIRESTORE_EMULATOR_HOST;
 const DATABASE_EMULATOR_HOST = process.env.FIREBASE_DATABASE_EMULATOR_HOST;
 const PUBSUB_PROJECT_ID = process.env.PUBSUB_PROJECT_ID || 'demo-project';
 const PUBSUB_EMULATOR_HOST = process.env.PUBSUB_EMULATOR_HOST;
+
+// ============================================================
+// 2.1 LOGGER INITIALIZATION
+// ============================================================
+const logger = createLogger({
+  serviceName: 'shopping-cart',
+  environment: process.env.NODE_ENV,
+  logLevel: process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error',
+});
 
 // ============================================================
 // 3. FIREBASE INITIALIZATION
@@ -72,13 +82,15 @@ const pubsub = new PubSub({
 });
 
 if (PUBSUB_EMULATOR_HOST) {
-  console.log(`Using PubSub emulator at ${PUBSUB_EMULATOR_HOST}`);
+  logger.info({ host: PUBSUB_EMULATOR_HOST }, 'Using PubSub emulator');
 }
 
 // ============================================================
 // 5. EVENT STORE & MESSAGE BUS SETUP
 // ============================================================
-const baseEventStore = getFirestoreEventStore(firestore);
+const baseEventStore = getFirestoreEventStore(firestore, {
+  observability: { logger },
+});
 
 // @ts-ignore - Type compatibility issue between Firestore and generic EventStore
 const eventStore = wireRealtimeDBProjections<typeof baseEventStore>({
@@ -88,12 +100,14 @@ const eventStore = wireRealtimeDBProjections<typeof baseEventStore>({
     shoppingCartDetailsProjection,
     shoppingCartShortInfoProjection,
   ],
+  observability: { logger },
 });
 
 const messageBus = getPubSubMessageBus({
   pubsub,
   useEmulator: !!PUBSUB_EMULATOR_HOST,
   topicPrefix: 'shopping-cart',
+  observability: { logger },
 });
 
 // Observer subscription for PubSub UI visualization (emulator only)
@@ -173,6 +187,7 @@ const mapErrorToProblemDetails: ErrorToProblemDetailsMapping = (error) => {
 // ============================================================
 export const app: Application = await getApplication({
   mapError: mapErrorToProblemDetails,
+  observability: { logger },
   openApiValidator: createOpenApiValidatorOptions(openApiFilePath, {
     validateRequests: true,
     validateResponses: process.env.NODE_ENV !== 'production',
@@ -196,9 +211,8 @@ export const app: Application = await getApplication({
 // 9. STARTUP & SHUTDOWN
 // ============================================================
 const gracefulShutdown = async (signal: string) => {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
+  logger.info({ signal }, 'Shutting down gracefully');
   await messageBus.close();
-  console.log('✅ Message bus closed');
   await firestore.terminate();
   await admin.app().delete();
   process.exit(0);
@@ -208,15 +222,17 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT ?? 3000);
 
   await messageBus.start();
-  console.log('✅ Message bus started');
-
+  
   startAPI(app, { port });
-  console.log(`🚀 Shopping Cart API listening on http://localhost:${port}`);
-  console.log('OpenAPI doc available at /api-docs/openapi.yml');
-  console.log(
-    `Firebase Emulator UI: http://localhost:4000 (Firestore + Realtime DB)`,
+  logger.info(
+    {
+      port,
+      apiDocsUrl: '/api-docs/openapi.yml',
+      firebaseEmulatorUrl: 'http://localhost:4000',
+      pubsubEmulatorUrl: 'http://localhost:4001',
+    },
+    'Shopping Cart API started',
   );
-  console.log(`PubSub UI: http://localhost:4001`);
 }
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
