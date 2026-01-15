@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-01-15
+
+### Changed
+
+- Shopping cart example now pins the Firebase emulator service to `linux/amd64`, enables `LOG_HTTP_ENABLED`, and keeps the emulated stack healthy for modern development machines.
+- Example dependencies were updated to the latest `@emmett-community` bundles (Express/OpenAPI, Firestore, Realtime DB, Observability) along with `firebase-admin`/`pino-http`, matching the node 18+ runtime in this release.
+- Example wiring of the Firestore event store now wraps `getFirestoreEventStore` with `asEventStore` before passing it to `wireRealtimeDBProjections`, keeping TypeScript satisfied while reusing the shared projections.
+
 ## [0.3.0] - 2025-12-31
 
 ### Added
