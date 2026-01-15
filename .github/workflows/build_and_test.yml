@@ -1,13 +1,6 @@
 name: Build and test
 
-on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "examples/**"
-      - "README.md"
-      - "CHANGELOG.md"
+on:  
   pull_request:
     paths-ignore:
       - "docs/**"
