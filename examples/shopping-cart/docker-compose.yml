@@ -1,6 +1,7 @@
 services:
   firebase:
     image: myfstartup/firebase-emulator-suite:15
+    platform: linux/amd64
     container_name: shopping-cart-firebase
     ports:
       - "8080:8080"  # Firestore
@@ -32,9 +33,9 @@ services:
       - FIRESTORE_EMULATOR_HOST=firebase:8080
       - FIREBASE_DATABASE_EMULATOR_HOST=firebase:9000
       - PUBSUB_EMULATOR_HOST=firebase:8085
-      - PORT=3000
-      - NODE_ENV=development
+      - PORT=3000      
       - LOG_LEVEL=debug
+      - LOG_HTTP_ENABLED=true
     depends_on:
       firebase:
         condition: service_healthy

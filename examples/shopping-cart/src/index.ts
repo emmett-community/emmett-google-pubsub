@@ -4,7 +4,7 @@
 import { IllegalStateError } from '@event-driven-io/emmett';
 import { PubSub } from '@google-cloud/pubsub';
 import { getPubSubMessageBus } from '@emmett-community/emmett-google-pubsub';
-import { getFirestoreEventStore } from '@emmett-community/emmett-google-firestore';
+import { asEventStore, getFirestoreEventStore } from '@emmett-community/emmett-google-firestore';
 import { wireRealtimeDBProjections } from '@emmett-community/emmett-google-realtime-db';
 import {
   createOpenApiValidatorOptions,
@@ -92,9 +92,8 @@ const baseEventStore = getFirestoreEventStore(firestore, {
   observability: { logger },
 });
 
-// @ts-ignore - Type compatibility issue between Firestore and generic EventStore
-const eventStore = wireRealtimeDBProjections<typeof baseEventStore>({
-  eventStore: baseEventStore,
+const eventStore = wireRealtimeDBProjections({
+  eventStore: asEventStore(baseEventStore),
   database,
   projections: [
     shoppingCartDetailsProjection,
