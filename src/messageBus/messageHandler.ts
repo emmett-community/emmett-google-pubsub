@@ -9,7 +9,10 @@ import { EmmettError } from '@event-driven-io/emmett';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
 import { deserialize } from './serialization';
 import { safeLog } from './observability';
-import type { Logger } from './types';
+import type { Logger, SubscriptionWatchdogOptions } from './types';
+
+const DEFAULT_WATCHDOG_CHECK_INTERVAL_MS = 30000;
+const DEFAULT_WATCHDOG_CHECK_TIMEOUT_MS = 5000;
 
 const tracer = trace.getTracer('@emmett-community/emmett-google-pubsub');
 
@@ -229,4 +232,95 @@ export function createMessageListener(
   subscription.on('error', (error) => {
     safeLog.error(logger, 'Subscription error', error);
   });
+}
+
+/**
+ * Start a watchdog that periodically checks a subscription is still
+ * reachable and recreates it (a supervised restart of just this
+ * subscription, not the whole message bus) if a liveness check fails.
+ *
+ * This exists because the underlying streaming-pull connection can go
+ * silently dead (e.g. after a prolonged network idle period) without ever
+ * emitting the subscription's `error` event - message delivery would
+ * otherwise stop permanently until the process is restarted.
+ *
+ * @param getSubscription - Returns the subscription currently in use. Called
+ *   fresh on every check so the watchdog always probes the live instance,
+ *   even after a previous check already replaced it.
+ * @param recreateSubscription - Closes the current subscription and returns
+ *   a newly created, listener-attached replacement.
+ * @param options - Watchdog configuration
+ * @param logger - Optional logger for observability
+ * @returns A function that stops the watchdog
+ */
+export function startSubscriptionWatchdog(
+  getSubscription: () => Subscription,
+  recreateSubscription: () => Promise<Subscription>,
+  options: SubscriptionWatchdogOptions | undefined,
+  logger?: Logger,
+): () => void {
+  if (options?.enabled === false) {
+    return () => undefined;
+  }
+
+  const checkIntervalMs =
+    options?.checkIntervalMs ?? DEFAULT_WATCHDOG_CHECK_INTERVAL_MS;
+  const checkTimeoutMs =
+    options?.checkTimeoutMs ?? DEFAULT_WATCHDOG_CHECK_TIMEOUT_MS;
+
+  let stopped = false;
+  let checking = false;
+
+  const checkOnce = async (): Promise<void> => {
+    if (checking) {
+      // A previous check (including its recreation) is still in flight.
+      return;
+    }
+    checking = true;
+
+    try {
+      const subscription = getSubscription();
+
+      await Promise.race([
+        subscription.getMetadata(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Watchdog liveness check timed out')),
+            checkTimeoutMs,
+          ),
+        ),
+      ]);
+    } catch (error) {
+      if (stopped) return;
+
+      safeLog.warn(
+        logger,
+        'Subscription failed liveness check, recreating',
+        error,
+      );
+
+      try {
+        await recreateSubscription();
+        safeLog.info(logger, 'Subscription recreated after liveness failure');
+      } catch (recreateError) {
+        safeLog.error(
+          logger,
+          'Failed to recreate subscription after liveness failure',
+          recreateError,
+        );
+      }
+    } finally {
+      checking = false;
+    }
+  };
+
+  const interval = setInterval(() => {
+    void checkOnce();
+  }, checkIntervalMs);
+  interval.unref?.();
+
+  return () => {
+    stopped = true;
+    clearInterval(interval);
+  };
 }

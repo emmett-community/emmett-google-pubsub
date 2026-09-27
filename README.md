@@ -11,6 +11,7 @@ Google Cloud Pub/Sub message bus implementation for [Emmett](https://event-drive
 - ✅ **Automatic Topic Management** - Auto-creates topics and subscriptions
 - ✅ **Message Scheduling** - Schedule commands/events for future execution
 - ✅ **Error Handling** - Built-in retry logic and dead letter queue support
+- ✅ **Connection Recovery** - Watchdog detects and recreates subscriptions that go silently dead
 - ✅ **Emulator Support** - Local development with PubSub emulator
 - ✅ **Emmett Compatible** - Drop-in replacement for in-memory message bus
 - ✅ **Producer-Only Mode** - Use without starting consumers
@@ -112,6 +113,27 @@ await messageBus.send({ type: 'MyCommand', data: {} });
 await messageBus.publish({ type: 'MyEvent', data: {} });
 ```
 
+### Connection Recovery
+
+The underlying streaming-pull connection can go silently dead after a network interruption (e.g. an idle NAT/firewall timeout) without ever emitting the subscription's `error` event. Left unhandled, this stops message delivery permanently until the process is restarted.
+
+A watchdog runs alongside every subscription, periodically checking it is still reachable and transparently recreating it (and its topic, if that was lost too) when a check fails. It's enabled by default:
+
+```typescript
+const messageBus = getPubSubMessageBus({
+  pubsub,
+  subscriptionOptions: {
+    watchdog: {
+      enabled: true,          // default: true
+      checkIntervalMs: 30000, // default: 30000
+      checkTimeoutMs: 5000,   // default: 5000
+    },
+  },
+});
+```
+
+The same failure mode can also strike the initial topic/subscription setup performed during `start()` - if the connection is already dead when the message bus starts, setup calls have no timeout of their own and could hang indefinitely. `setupTimeoutMs` (default: 10000) bounds those calls too.
+
 ## API Reference
 
 ### `getPubSubMessageBus(config)`
@@ -137,6 +159,8 @@ const messageBus = getPubSubMessageBus({
       deadLetterTopic: 'projects/.../topics/dead-letters',
       maxDeliveryAttempts: 5,
     },
+    watchdog: { enabled: true },   // Recreate dead subscriptions (default: enabled)
+    setupTimeoutMs: 10000,         // Timeout for topic/subscription setup calls
   },
 });
 ```

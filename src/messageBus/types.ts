@@ -124,6 +124,55 @@ export interface SubscriptionOptions {
     deadLetterTopic?: string;
     maxDeliveryAttempts?: number;
   };
+
+  /**
+   * Watchdog that periodically checks each subscription is still reachable
+   * and transparently recreates it if not.
+   *
+   * The underlying streaming-pull connection can go silently dead after a
+   * prolonged idle period (e.g. a NAT/firewall dropping an inactive gRPC
+   * stream) without ever emitting the subscription's `error` event. Without
+   * this watchdog, message delivery stops permanently until the process is
+   * restarted.
+   */
+  watchdog?: SubscriptionWatchdogOptions;
+
+  /**
+   * Maximum time to wait for each topic/subscription setup call
+   * (existence checks and creation) during `start()`, in milliseconds.
+   *
+   * These calls have no timeout of their own: if the PubSub client's
+   * connection is already dead when `start()` runs (e.g. after a prior
+   * network interruption), they can hang indefinitely and block the entire
+   * message bus - and anything awaiting it - from ever starting.
+   *
+   * @default 10000
+   */
+  setupTimeoutMs?: number;
+}
+
+/**
+ * Configuration for the subscription liveness watchdog.
+ */
+export interface SubscriptionWatchdogOptions {
+  /**
+   * Enable the watchdog.
+   * @default true
+   */
+  enabled?: boolean;
+
+  /**
+   * How often to check each subscription's liveness, in milliseconds.
+   * @default 30000
+   */
+  checkIntervalMs?: number;
+
+  /**
+   * How long a single liveness check may take before it is considered
+   * failed, in milliseconds.
+   * @default 5000
+   */
+  checkTimeoutMs?: number;
 }
 
 /**
