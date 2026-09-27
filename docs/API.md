@@ -4,24 +4,31 @@ Complete API documentation for `@emmett-community/emmett-google-pubsub`.
 
 ## Table of Contents
 
-- [getPubSubMessageBus](#getpubsubmessagebus)
-- [Configuration Types](#configuration-types)
-  - [PubSubMessageBusConfig](#pubsubmessagebusconfig)
-  - [SubscriptionOptions](#subscriptionoptions)
-- [Message Bus Methods](#message-bus-methods)
-  - [send](#send)
-  - [publish](#publish)
-  - [handle](#handle)
-  - [subscribe](#subscribe)
-  - [schedule](#schedule)
-  - [dequeue](#dequeue)
-- [Lifecycle Methods](#lifecycle-methods)
-  - [start](#start)
-  - [close](#close)
-  - [isStarted](#isstarted)
-- [Types](#types)
-  - [PubSubMessageEnvelope](#pubsubmessageenvelope)
-  - [PubSubMessageBusLifecycle](#pubsubmessagebuslifecycle)
+- [API Reference](#api-reference)
+  - [Table of Contents](#table-of-contents)
+  - [getPubSubMessageBus](#getpubsubmessagebus)
+  - [Configuration Types](#configuration-types)
+    - [PubSubMessageBusConfig](#pubsubmessagebusconfig)
+    - [SubscriptionOptions](#subscriptionoptions)
+    - [SubscriptionWatchdogOptions](#subscriptionwatchdogoptions)
+  - [Message Bus Methods](#message-bus-methods)
+    - [send](#send)
+    - [publish](#publish)
+    - [handle](#handle)
+    - [subscribe](#subscribe)
+    - [schedule](#schedule)
+    - [dequeue](#dequeue)
+  - [Lifecycle Methods](#lifecycle-methods)
+    - [start](#start)
+    - [close](#close)
+    - [isStarted](#isstarted)
+  - [Types](#types)
+    - [PubSubMessageEnvelope](#pubsubmessageenvelope)
+    - [PubSubMessageBusLifecycle](#pubsubmessagebuslifecycle)
+  - [Error Handling](#error-handling)
+    - [EmmettError](#emmetterror)
+    - [Message Processing Errors](#message-processing-errors)
+  - [See Also](#see-also)
 
 ---
 
@@ -38,7 +45,7 @@ function getPubSubMessageBus(
 **Parameters:**
 
 | Parameter | Type | Description |
-|-----------|------|-------------|
+| --- | --- | --- |
 | `config` | `PubSubMessageBusConfig` | Configuration options |
 
 **Returns:** Message bus instance implementing all Emmett interfaces plus lifecycle methods.
@@ -80,7 +87,7 @@ interface PubSubMessageBusConfig {
 ```
 
 | Property | Type | Default | Description |
-|----------|------|---------|-------------|
+| --- | --- | --- | --- |
 | `pubsub` | `PubSub` | **required** | Google Cloud PubSub client instance |
 | `instanceId` | `string` | auto-generated UUID | Unique identifier for this instance's subscriptions |
 | `topicPrefix` | `string` | `"emmett"` | Prefix for topic/subscription names |
@@ -105,16 +112,20 @@ interface SubscriptionOptions {
     deadLetterTopic?: string;
     maxDeliveryAttempts?: number;
   };
+  watchdog?: SubscriptionWatchdogOptions;
+  setupTimeoutMs?: number;
 }
 ```
 
 | Property | Type | Default | Description |
-|----------|------|---------|-------------|
+| --- | --- | --- | --- |
 | `ackDeadlineSeconds` | `number` | `60` | Acknowledgment deadline in seconds |
 | `retryPolicy.minimumBackoff` | `{ seconds: number }` | `{ seconds: 10 }` | Minimum retry backoff |
 | `retryPolicy.maximumBackoff` | `{ seconds: number }` | `{ seconds: 600 }` | Maximum retry backoff |
 | `deadLetterPolicy.deadLetterTopic` | `string` | - | Topic for failed messages |
 | `deadLetterPolicy.maxDeliveryAttempts` | `number` | `5` | Max retries before dead letter |
+| `watchdog` | `SubscriptionWatchdogOptions` | see below | Liveness watchdog configuration |
+| `setupTimeoutMs` | `number` | `10000` | Timeout for topic/subscription existence checks and creation during `start()` |
 
 **Example:**
 
@@ -130,6 +141,41 @@ const messageBus = getPubSubMessageBus({
     deadLetterPolicy: {
       deadLetterTopic: 'projects/my-project/topics/dead-letters',
       maxDeliveryAttempts: 10,
+    },
+    watchdog: { checkIntervalMs: 15000 },
+    setupTimeoutMs: 15000,
+  },
+});
+```
+
+### SubscriptionWatchdogOptions
+
+Configuration for the subscription liveness watchdog. The underlying streaming-pull connection can go silently dead after a network interruption (e.g. an idle NAT/firewall timeout) without ever emitting the subscription's `error` event; the watchdog periodically checks liveness and transparently recreates the subscription (and its topic, if that was lost too) when a check fails.
+
+```typescript
+interface SubscriptionWatchdogOptions {
+  enabled?: boolean;
+  checkIntervalMs?: number;
+  checkTimeoutMs?: number;
+}
+```
+
+| Property | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | `boolean` | `true` | Enable the watchdog |
+| `checkIntervalMs` | `number` | `30000` | How often to check each subscription's liveness |
+| `checkTimeoutMs` | `number` | `5000` | How long a single liveness check may take before it is considered failed |
+
+**Example:**
+
+```typescript
+const messageBus = getPubSubMessageBus({
+  pubsub,
+  subscriptionOptions: {
+    watchdog: {
+      enabled: true,
+      checkIntervalMs: 15000,
+      checkTimeoutMs: 3000,
     },
   },
 });
@@ -150,7 +196,7 @@ send<CommandType extends Command>(command: CommandType): Promise<void>
 **Parameters:**
 
 | Parameter | Type | Description |
-|-----------|------|-------------|
+| --- | --- | --- |
 | `command` | `Command` | Command object with `type` and `data` |
 
 **Behavior:**
@@ -182,7 +228,7 @@ publish<EventType extends Event>(event: EventType): Promise<void>
 **Parameters:**
 
 | Parameter | Type | Description |
-|-----------|------|-------------|
+| --- | --- | --- |
 | `event` | `Event` | Event object with `type` and `data` |
 
 **Behavior:**
@@ -218,7 +264,7 @@ handle<CommandType extends Command>(
 **Parameters:**
 
 | Parameter | Type | Description |
-|-----------|------|-------------|
+| --- | --- | --- |
 | `handler` | `SingleMessageHandler` | Async function to process commands |
 | `commandTypeNames` | `string[]` | Command type names to handle |
 
@@ -255,7 +301,7 @@ subscribe<EventType extends Event>(
 **Parameters:**
 
 | Parameter | Type | Description |
-|-----------|------|-------------|
+| --- | --- | --- |
 | `handler` | `SingleMessageHandler` | Async function to process events |
 | `eventTypeNames` | `string[]` | Event type names to subscribe to |
 
@@ -299,7 +345,7 @@ schedule<MessageType extends Message>(
 **Parameters:**
 
 | Parameter | Type | Description |
-|-----------|------|-------------|
+| --- | --- | --- |
 | `message` | `Message` | Command or event to schedule |
 | `options` | `object` | Timing options |
 | `options.afterInMs` | `number` | Delay in milliseconds |
@@ -453,7 +499,7 @@ interface PubSubMessageEnvelope {
 ```
 
 | Property | Type | Description |
-|----------|------|-------------|
+| --- | --- | --- |
 | `type` | `string` | Message type name |
 | `kind` | `'command' \| 'event'` | Message classification |
 | `data` | `unknown` | Serialized message data |
@@ -497,7 +543,7 @@ try {
 ### Message Processing Errors
 
 | Scenario | Behavior |
-|----------|----------|
+| --- | --- |
 | Handler succeeds | Message acknowledged |
 | Handler throws (transient) | Message nack'd, retried with backoff |
 | Handler throws (permanent) | Message ack'd, logged as error |

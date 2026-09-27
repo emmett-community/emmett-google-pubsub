@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-27
+
+### Added
+
+- Subscription liveness watchdog that periodically checks each subscription is still reachable and transparently recreates it (and its topic, if that was also lost) if a check fails. New `watchdog` option in `SubscriptionOptions`, enabled by default.
+- `setupTimeoutMs` option in `SubscriptionOptions` bounding how long topic/subscription existence checks and creation may take during `start()`.
+
+### Fixed
+
+- The underlying streaming-pull connection could go silently dead after a network interruption (e.g. an idle NAT/firewall timeout) without ever emitting the subscription's `error` event, leaving message delivery stopped permanently until the process was restarted. The watchdog now detects and recovers from this.
+- Topic/subscription setup calls (`exists`, `create`) had no timeout of their own: a dead connection at `start()` time could block the entire message bus - and anything awaiting it - from ever starting.
+
 ## [0.4.0] - 2026-01-15
 
 ### Changed

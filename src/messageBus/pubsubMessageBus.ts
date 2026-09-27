@@ -1,3 +1,4 @@
+import type { Subscription, Topic } from '@google-cloud/pubsub';
 import type {
   AnyMessage,
   Command,
@@ -30,7 +31,7 @@ import {
   getOrCreateTopic,
   deleteSubscriptions,
 } from './topicManager';
-import { createMessageListener } from './messageHandler';
+import { createMessageListener, startSubscriptionWatchdog } from './messageHandler';
 import { generateUUID } from './utils';
 import { safeLog } from './observability';
 
@@ -121,6 +122,9 @@ export function getPubSubMessageBus(
   // Active subscriptions
   const subscriptions: SubscriptionInfo[] = [];
 
+  // Stop functions for each subscription's liveness watchdog
+  const watchdogStoppers: (() => void)[] = [];
+
   // Scheduler for delayed messages
   const scheduler = new MessageScheduler({
     useEmulator: config.useEmulator ?? false,
@@ -167,9 +171,6 @@ export function getPubSubMessageBus(
         ? getCommandTopicName(messageType, topicPrefix)
         : getEventTopicName(messageType, topicPrefix);
 
-    // Get or create topic
-    const topic = await getOrCreateTopic(config.pubsub, topicName);
-
     // Get subscription name
     const subName =
       kind === 'command'
@@ -180,37 +181,69 @@ export function getPubSubMessageBus(
             topicPrefix,
           );
 
-    // Create subscription
-    const subscription = await getOrCreateSubscription(
-      topic,
-      subName,
-      config.subscriptionOptions,
-    );
-
-    // Create message listener with appropriate handlers
-    if (kind === 'event' && subscriptionId) {
-      // For events, create a map with only this subscription's handler
-      const handler = subscriptionHandlers.get(subscriptionId);
-      if (handler) {
+    // Handlers this subscription's listener should route to, resolved once
+    // up front so a later recreation (by the watchdog) routes to the same
+    // handlers as the original subscription did.
+    const handlersForListener = (() => {
+      if (kind === 'event' && subscriptionId) {
+        const handler = subscriptionHandlers.get(subscriptionId);
         const singleHandlerMap = new Map<
           string,
           SingleRawMessageHandlerWithoutContext<AnyMessage>[]
         >();
-        singleHandlerMap.set(messageType, [handler]);
-        createMessageListener(subscription, messageType, kind, singleHandlerMap, logger);
+        if (handler) {
+          singleHandlerMap.set(messageType, [handler]);
+        }
+        return singleHandlerMap;
       }
-    } else {
-      // For commands, use the handlers map as before
-      createMessageListener(subscription, messageType, kind, handlers, logger);
-    }
+      return handlers;
+    })();
 
-    // Track subscription
-    subscriptions.push({
-      topic,
-      subscription,
+    // Re-verifies (and recreates if missing) the topic on every call, not
+    // just the first - a cached `Topic` reference can outlive the resource
+    // it points to, and recreating a subscription onto a topic that no
+    // longer exists fails.
+    const setupTimeoutMs = config.subscriptionOptions?.setupTimeoutMs;
+    const openSubscription = async (): Promise<{
+      topic: Topic;
+      subscription: Subscription;
+    }> => {
+      const topic = await getOrCreateTopic(config.pubsub, topicName, setupTimeoutMs);
+      const subscription = await getOrCreateSubscription(
+        topic,
+        subName,
+        config.subscriptionOptions,
+        setupTimeoutMs,
+      );
+      createMessageListener(subscription, messageType, kind, handlersForListener, logger);
+      return { topic, subscription };
+    };
+
+    const opened = await openSubscription();
+
+    // Track subscription (mutated in place if the watchdog recreates it, so
+    // close() and any other reader always sees the currently-live instance)
+    const info: SubscriptionInfo = {
+      topic: opened.topic,
+      subscription: opened.subscription,
       messageType,
       kind,
-    });
+    };
+    subscriptions.push(info);
+
+    const stopWatchdog = startSubscriptionWatchdog(
+      () => info.subscription,
+      async () => {
+        await info.subscription.close().catch(() => undefined);
+        const reopened = await openSubscription();
+        info.topic = reopened.topic;
+        info.subscription = reopened.subscription;
+        return info.subscription;
+      },
+      config.subscriptionOptions?.watchdog,
+      logger,
+    );
+    watchdogStoppers.push(stopWatchdog);
   }
 
   /**
@@ -566,6 +599,13 @@ export function getPubSubMessageBus(
       return tracer.startActiveSpan('emmett.pubsub.close', async (span) => {
         try {
           safeLog.info(logger, 'Closing message bus');
+
+          // Stop all subscription watchdogs before touching subscriptions,
+          // so a watchdog cannot recreate a subscription mid-shutdown.
+          for (const stopWatchdog of watchdogStoppers) {
+            stopWatchdog();
+          }
+          watchdogStoppers.length = 0;
 
           // Only cleanup subscriptions if started
           if (started) {

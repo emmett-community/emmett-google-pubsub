@@ -2,6 +2,29 @@ import type { PubSub, Subscription, Topic } from '@google-cloud/pubsub';
 import type { Logger, SubscriptionOptions } from './types';
 import { safeLog } from './observability';
 
+const DEFAULT_SETUP_TIMEOUT_MS = 10000;
+
+/**
+ * Bounds a PubSub client call that would otherwise have no timeout of its
+ * own. A gRPC call issued on a connection that went silently dead (e.g.
+ * after a network interruption) can hang indefinitely rather than
+ * rejecting - without this, resource setup during `start()` could block
+ * the entire message bus (and anything awaiting it) forever.
+ */
+const withSetupTimeout = <T>(promise: Promise<T>, operation: string, timeoutMs: number): Promise<T> => {
+  let timeoutHandle: NodeJS.Timeout | undefined;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(
+        () => reject(new Error(`${operation} timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+      timeoutHandle.unref?.();
+    }),
+  ]).finally(() => clearTimeout(timeoutHandle));
+};
+
 /**
  * Get command topic name
  */
@@ -46,20 +69,22 @@ export function getEventSubscriptionName(
  *
  * @param pubsub - PubSub client
  * @param topicName - Name of the topic
+ * @param timeoutMs - Maximum time to wait for each underlying call
  * @returns The topic instance
  */
 export async function getOrCreateTopic(
   pubsub: PubSub,
   topicName: string,
+  timeoutMs = DEFAULT_SETUP_TIMEOUT_MS,
 ): Promise<Topic> {
   const topic = pubsub.topic(topicName);
 
   try {
-    const [exists] = await topic.exists();
+    const [exists] = await withSetupTimeout(topic.exists(), `Checking topic ${topicName} exists`, timeoutMs);
 
     if (!exists) {
       try {
-        await topic.create();
+        await withSetupTimeout(topic.create(), `Creating topic ${topicName}`, timeoutMs);
       } catch (createError: any) {
         // Ignore ALREADY_EXISTS errors (race condition)
         if (createError.code !== 6) {
@@ -88,11 +113,16 @@ export async function getOrCreateSubscription(
   topic: Topic,
   subscriptionName: string,
   options?: SubscriptionOptions,
+  timeoutMs = DEFAULT_SETUP_TIMEOUT_MS,
 ): Promise<Subscription> {
   const subscription = topic.subscription(subscriptionName);
 
   try {
-    const [exists] = await subscription.exists();
+    const [exists] = await withSetupTimeout(
+      subscription.exists(),
+      `Checking subscription ${subscriptionName} exists`,
+      timeoutMs,
+    );
 
     if (!exists) {
       const config = {
@@ -122,7 +152,11 @@ export async function getOrCreateSubscription(
       };
 
       try {
-        await subscription.create(config);
+        await withSetupTimeout(
+          subscription.create(config),
+          `Creating subscription ${subscriptionName}`,
+          timeoutMs,
+        );
       } catch (createError: any) {
         // Ignore ALREADY_EXISTS errors (race condition)
         if (createError.code !== 6) {
