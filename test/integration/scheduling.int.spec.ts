@@ -1,4 +1,5 @@
 import type { Message } from '@event-driven-io/emmett';
+import { createInMemoryMessageBus, InMemoryPubSub } from '../../src/testing';
 import { getTestMessageBus, createTestCommand, waitFor } from './helpers';
 
 describe('Scheduling Integration Tests', () => {
@@ -319,5 +320,35 @@ describe('Scheduling Integration Tests', () => {
         });
       }).not.toThrow();
     });
+  });
+});
+
+describe('scheduling against real Pub/Sub (not emulator mode)', () => {
+  it('logs a publish failure instead of leaving an unhandled rejection', async () => {
+    const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const pubsub = new InMemoryPubSub();
+    const prefix = 'sched-fail';
+    jest
+      .spyOn(pubsub.topic(`${prefix}-scheduled-messages`), 'exists')
+      .mockRejectedValue(new Error('pubsub down'));
+    const bus = createInMemoryMessageBus({
+      pubsub,
+      topicPrefix: prefix,
+      useEmulator: false,
+      observability: { logger },
+    });
+    const unhandled = jest.fn();
+    process.on('unhandledRejection', unhandled);
+
+    try {
+      bus.schedule({ type: 'LaterEvent', data: {} } as Message, { afterInMs: 1000 });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalled();
+    } finally {
+      process.off('unhandledRejection', unhandled);
+      await bus.close();
+    }
   });
 });

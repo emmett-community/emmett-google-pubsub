@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - Unreleased
+
+### Added
+
+- `subscriptionId` config on the bus, normally the service name. With it, `subscribe` names the Pub/Sub subscription `<topicPrefix>-evt-<EventType>-<subscriptionId>`: it survives restarts (events published while the service was down are delivered), replicas of the service share it (an event normally goes to one replica, but can be delivered again, so handlers must be idempotent), and all handlers of the service for one event type run on the one subscription. Without it the previous behavior is kept (random id per subscriber, nothing survives a restart) and a warning is logged outside the emulator.
+- `subscribeWithOptions(handler, eventTypes, options)` for the uncommon cases: a `subscriptionId` other than the bus one, `fanOut` (every replica receives every event, for example to keep an in-memory cache current), a per-subscriber `topicPrefix` and per-subscriber `deadLetterPolicy` and `retryPolicy`.
+- Handlers receive `metadata.messageId`. A `metadata.messageId` already present on the published event (for example the event store one) is used as the envelope id, so it is stable across publications.
+- `messageId`, `schemaVersion` and `traceparent` are published as message attributes and read back into the handler metadata (`deserializeWithMetadata`). The handling span uses the received `traceparent` as remote parent.
+- The dead letter topic is created when a subscription declares one, and referenced by its fully qualified name.
+- `subscriptionOptions.subscriber` passes the Pub/Sub client subscriber options through (flow control, client-side acknowledgement deadline). They apply to the process and are not stored on the subscription.
+- `@emmett-community/emmett-google-pubsub/testing` entry exporting `InMemoryPubSub` and `createInMemoryMessageBus`. The fake models competing consumers on one subscription and redelivery to a dead letter topic.
+
+### Fixed
+
+- `schedule` no longer turns a publish failure into an unhandled promise rejection: it is logged.
+- Publishing no longer fails when another publisher creates the topic between the existence check and `topic.create()` (ALREADY_EXISTS).
+
+### Deprecated
+
+- `schedule` and `dequeue`: in emulator mode they keep messages in memory, and against real Pub/Sub `schedule` publishes at once to a `<topicPrefix>-scheduled-messages` topic that nothing consumes, because Pub/Sub has no delayed delivery. Messages are never delivered at the requested time. Use Cloud Scheduler and Cloud Tasks, as `scheduled-jobs.md` and ADR-006 define.
+
 ## [0.5.0] - 2026-09-27
 
 ### Added

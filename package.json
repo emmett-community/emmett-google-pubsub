@@ -1,6 +1,6 @@
 {
   "name": "@emmett-community/emmett-google-pubsub",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Google Cloud Pub/Sub message bus for Emmett - Event Sourcing development made simple",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -15,6 +15,16 @@
         "types": "./dist/index.d.ts",
         "default": "./dist/index.js"
       }
+    },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing.d.mts",
+        "default": "./dist/testing.mjs"
+      },
+      "require": {
+        "types": "./dist/testing.d.ts",
+        "default": "./dist/testing.js"
+      }
     }
   },
   "files": [
@@ -27,7 +37,7 @@
     "test:unit": "jest --testMatch \"**/*.unit.spec.ts\" --watchman=false",
     "test:int": "jest --testMatch \"**/*.int.spec.ts\" --watchman=false",
     "test:integration": "npm run test:int",
-    "test:e2e": "jest --testMatch \"**/*.e2e.spec.ts\" --watchman=false",
+    "test:e2e": "jest --testMatch \"**/*.e2e.spec.ts\" --runInBand --watchman=false",
     "test:watch": "jest --watch --watchman=false",
     "test:coverage": "jest --coverage --watchman=false",
     "lint": "eslint . --ext .ts",

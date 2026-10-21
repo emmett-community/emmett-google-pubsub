@@ -7,8 +7,9 @@ import type {
 } from '@event-driven-io/emmett';
 import { EmmettError } from '@event-driven-io/emmett';
 import { trace, SpanStatusCode } from '@opentelemetry/api';
-import { deserialize } from './serialization';
+import { deserializeWithMetadata } from './serialization';
 import { safeLog } from './observability';
+import { contextFromTraceparent } from './tracing';
 import type { Logger, SubscriptionWatchdogOptions } from './types';
 
 const DEFAULT_WATCHDOG_CHECK_INTERVAL_MS = 30000;
@@ -74,9 +75,11 @@ export async function handleCommandMessage(
   commandType: string,
   logger?: Logger,
 ): Promise<'ack' | 'nack'> {
-  const span = tracer.startSpan('emmett.pubsub.handle_command', {
-    attributes: { 'emmett.message.kind': 'command' },
-  });
+  const span = tracer.startSpan(
+    'emmett.pubsub.handle_command',
+    { attributes: { 'emmett.message.kind': 'command' } },
+    contextFromTraceparent(message.attributes?.traceparent),
+  );
 
   try {
     // Get handlers for this command type
@@ -97,7 +100,7 @@ export async function handleCommandMessage(
     }
 
     // Deserialize the command
-    const command = deserialize<Command>(message.data);
+    const command = deserializeWithMetadata<Command>(message.data, message.attributes);
 
     // Execute the handler
     const handler = commandHandlers[0];
@@ -138,9 +141,11 @@ export async function handleEventMessage(
   eventType: string,
   logger?: Logger,
 ): Promise<'ack' | 'nack'> {
-  const span = tracer.startSpan('emmett.pubsub.handle_event', {
-    attributes: { 'emmett.message.kind': 'event' },
-  });
+  const span = tracer.startSpan(
+    'emmett.pubsub.handle_event',
+    { attributes: { 'emmett.message.kind': 'event' } },
+    contextFromTraceparent(message.attributes?.traceparent),
+  );
 
   try {
     // Get handlers for this event type
@@ -154,7 +159,7 @@ export async function handleEventMessage(
     }
 
     // Deserialize the event
-    const event = deserialize<Event>(message.data);
+    const event = deserializeWithMetadata<Event>(message.data, message.attributes);
 
     // Execute all handlers sequentially
     for (const handler of eventHandlers) {
