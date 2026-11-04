@@ -1,5 +1,5 @@
-import type { PubSub, Subscription, Topic } from '@google-cloud/pubsub';
-import type { Message, SingleMessageHandler } from '@event-driven-io/emmett';
+import type { PubSub, SubscriberOptions, Subscription, Topic } from '@google-cloud/pubsub';
+import type { Event, Message, SingleMessageHandler } from '@event-driven-io/emmett';
 
 /**
  * Canonical Logger contract for the Emmett ecosystem.
@@ -61,6 +61,16 @@ export interface PubSubMessageBusConfig {
    * @default "emmett"
    */
   topicPrefix?: string;
+
+  /**
+   * Stable subscription id of this service, normally the service name. Event subscriptions are
+   * named `<topicPrefix>-evt-<EventType>-<subscriptionId>`, so they survive restarts (events
+   * published while the service was down are delivered), replicas of the service share them (an
+   * event normally goes to one replica, but can be delivered again, so handlers must be
+   * idempotent), and all handlers of the service for one event type run on one subscription.
+   * When missing, each subscriber gets a random id (tests and local development only).
+   */
+  subscriptionId?: string;
 
   /**
    * Enable emulator mode (disables Cloud Scheduler features)
@@ -126,6 +136,16 @@ export interface SubscriptionOptions {
   };
 
   /**
+   * Options of the Pub/Sub client subscriber, passed through as they are: flow control
+   * (`flowControl.maxMessages`, `maxBytes`, `allowExcessMessages`, `maxExtension`) and the
+   * acknowledgement deadline the client uses while it holds a message (`minAckDeadline`,
+   * `maxAckDeadline`). They apply to this process only and are not stored on the subscription,
+   * unlike `ackDeadlineSeconds` above. Note the client does not treat flow control as a hard cap,
+   * so a replica that hangs can hold more messages than `maxMessages`.
+   */
+  subscriber?: SubscriberOptions;
+
+  /**
    * Watchdog that periodically checks each subscription is still reachable
    * and transparently recreates it if not.
    *
@@ -149,6 +169,52 @@ export interface SubscriptionOptions {
    * @default 10000
    */
   setupTimeoutMs?: number;
+}
+
+/**
+ * Options for a single event subscriber registered with `subscribeWithOptions`.
+ */
+export interface SubscribeOptions {
+  /**
+   * Subscription id to use instead of the bus `subscriptionId`. The Pub/Sub subscription is
+   * named after it, so a restart or a second replica using the same id shares one
+   * subscription (competing consumers). Must be unique per event type within one bus.
+   */
+  subscriptionId?: string;
+
+  /**
+   * Give this subscriber its own subscription with a random id, so every replica receives
+   * every event. Nothing survives a restart. Ignored when `subscriptionId` is set.
+   * @default false
+   */
+  fanOut?: boolean;
+
+  /**
+   * Prefix of the topics this subscriber reads, when they were published under a different
+   * prefix than the bus-wide `topicPrefix`. The subscription itself keeps the bus prefix.
+   */
+  topicPrefix?: string;
+
+  /**
+   * Dead letter policy for this subscription. Overrides the bus-wide one.
+   */
+  deadLetterPolicy?: SubscriptionOptions['deadLetterPolicy'];
+
+  /**
+   * Retry policy for this subscription. Overrides the bus-wide one.
+   */
+  retryPolicy?: SubscriptionOptions['retryPolicy'];
+}
+
+/**
+ * Event subscription with options, added to the message bus on top of Emmett's `subscribe`.
+ */
+export interface PubSubMessageBusSubscriptions {
+  subscribeWithOptions<EventType extends Event>(
+    eventHandler: SingleMessageHandler<EventType>,
+    eventTypeNames: EventType['type'][],
+    options: SubscribeOptions,
+  ): void;
 }
 
 /**

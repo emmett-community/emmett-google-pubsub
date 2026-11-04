@@ -17,7 +17,10 @@ import type {
   Logger,
   PubSubMessageBusConfig,
   PubSubMessageBusLifecycle,
+  PubSubMessageBusSubscriptions,
+  SubscribeOptions,
   SubscriptionInfo,
+  SubscriptionOptions,
 } from './types';
 import type { ScheduledMessage } from './scheduler';
 import { MessageScheduler } from './scheduler';
@@ -34,6 +37,7 @@ import {
 import { createMessageListener, startSubscriptionWatchdog } from './messageHandler';
 import { generateUUID } from './utils';
 import { safeLog } from './observability';
+import { toTraceparent } from './tracing';
 
 const tracer = trace.getTracer('@emmett-community/emmett-google-pubsub');
 
@@ -89,12 +93,26 @@ export function getPubSubMessageBus(
   EventSubscription &
   CommandProcessor &
   ScheduledMessageProcessor &
+  PubSubMessageBusSubscriptions &
   PubSubMessageBusLifecycle {
   // Extract observability options
   const logger: Logger | undefined = config.observability?.logger;
 
   // Internal state
   const instanceId = config.instanceId ?? generateUUID();
+  const defaultSubscriptionId = config.subscriptionId;
+  let warnedEphemeral = false;
+
+  // Without a subscription id an event subscription is named after a random id: every restart
+  // leaves an orphan subscription behind and loses the events published while down
+  function warnEphemeralSubscriptions(): void {
+    if (warnedEphemeral || config.useEmulator) return;
+    warnedEphemeral = true;
+    safeLog.warn(
+      logger,
+      'No subscriptionId configured: event subscriptions are ephemeral (random id per subscriber)',
+    );
+  }
   const topicPrefix = config.topicPrefix ?? 'emmett';
   const autoCreateResources = config.autoCreateResources ?? true;
   const cleanupOnClose = config.cleanupOnClose ?? false;
@@ -106,14 +124,25 @@ export function getPubSubMessageBus(
     SingleRawMessageHandlerWithoutContext<AnyMessage>[]
   >();
 
-  // Map of subscription ID to specific handler (for event subscriptions)
+  // Handlers of each event subscription, by subscription ID and then message type. Several
+  // handlers can share one subscription (those of one service); the array is mutated in
+  // place so a listener that is already running sees handlers registered later.
   const subscriptionHandlers = new Map<
     string,
-    SingleRawMessageHandlerWithoutContext<AnyMessage>
+    Map<string, SingleRawMessageHandlerWithoutContext<AnyMessage>[]>
   >();
 
   // Map of message type to subscription IDs (for events with multiple subscriptions)
   const eventSubscriptionIds = new Map<string, string[]>();
+
+  // Per-subscriber options registered through subscribeWithOptions, by `<subscription ID>|<type>`
+  const subscriptionSettings = new Map<string, SubscribeOptions>();
+
+  // Event subscriptions already opened, by `<subscription ID>|<type>`
+  const openedEventSubscriptions = new Set<string>();
+
+  const subscriptionKey = (subscriptionId: string, messageType: string) =>
+    `${subscriptionId}|${messageType}`;
 
   // Track which message types are commands vs events
   const commandTypes = new Set<string>();
@@ -165,11 +194,33 @@ export function getPubSubMessageBus(
     kind: 'command' | 'event',
     subscriptionId?: string,
   ): Promise<void> {
-    // Get topic name based on kind
+    if (kind === 'event' && subscriptionId) {
+      // One Pub/Sub subscription per (id, type), however many handlers share it
+      const key = subscriptionKey(subscriptionId, messageType);
+      if (openedEventSubscriptions.has(key)) {
+        return;
+      }
+      openedEventSubscriptions.add(key);
+    }
+
+    const settings = subscriptionId
+      ? subscriptionSettings.get(subscriptionKey(subscriptionId, messageType))
+      : undefined;
+
+    // Get topic name based on kind (a subscriber may read events published under another prefix)
     const topicName =
       kind === 'command'
         ? getCommandTopicName(messageType, topicPrefix)
-        : getEventTopicName(messageType, topicPrefix);
+        : getEventTopicName(messageType, settings?.topicPrefix ?? topicPrefix);
+
+    const subscriptionOptions: SubscriptionOptions | undefined =
+      settings?.deadLetterPolicy || settings?.retryPolicy
+        ? {
+            ...config.subscriptionOptions,
+            ...(settings.deadLetterPolicy && { deadLetterPolicy: settings.deadLetterPolicy }),
+            ...(settings.retryPolicy && { retryPolicy: settings.retryPolicy }),
+          }
+        : config.subscriptionOptions;
 
     // Get subscription name
     const subName =
@@ -186,15 +237,15 @@ export function getPubSubMessageBus(
     // handlers as the original subscription did.
     const handlersForListener = (() => {
       if (kind === 'event' && subscriptionId) {
-        const handler = subscriptionHandlers.get(subscriptionId);
-        const singleHandlerMap = new Map<
+        const registered = subscriptionHandlers.get(subscriptionId)?.get(messageType);
+        const handlersOfSubscription = new Map<
           string,
           SingleRawMessageHandlerWithoutContext<AnyMessage>[]
         >();
-        if (handler) {
-          singleHandlerMap.set(messageType, [handler]);
+        if (registered) {
+          handlersOfSubscription.set(messageType, registered);
         }
-        return singleHandlerMap;
+        return handlersOfSubscription;
       }
       return handlers;
     })();
@@ -212,8 +263,9 @@ export function getPubSubMessageBus(
       const subscription = await getOrCreateSubscription(
         topic,
         subName,
-        config.subscriptionOptions,
+        subscriptionOptions,
         setupTimeoutMs,
+        config.pubsub,
       );
       createMessageListener(subscription, messageType, kind, handlersForListener, logger);
       return { topic, subscription };
@@ -291,12 +343,27 @@ export function getPubSubMessageBus(
         // Create topic if it doesn't exist
         const [exists] = await topic.exists();
         if (!exists) {
-          await topic.create();
+          try {
+            await topic.create();
+          } catch (createError) {
+            // ALREADY_EXISTS (code 6): another publisher created it between the check and now
+            if ((createError as { code?: number }).code !== 6) {
+              throw createError;
+            }
+          }
         }
       }
 
+      // Keep the id the message already has (e.g. from the event store) so it is stable
+      // across publications; consumers deduplicate by it
+      const metadata = (message as { metadata?: Record<string, unknown> }).metadata;
+      const messageId =
+        typeof metadata?.messageId === 'string' ? metadata.messageId : generateUUID();
+      const schemaVersion = metadata?.schemaVersion;
+      const traceparent = toTraceparent(span.spanContext());
+
       // Serialize message
-      const buffer = serialize(message);
+      const buffer = serialize(message, messageId);
 
       // Publish
       await topic.publishMessage({
@@ -304,6 +371,9 @@ export function getPubSubMessageBus(
         attributes: {
           messageType: message.type,
           messageKind: kind,
+          messageId,
+          ...(schemaVersion !== undefined && { schemaVersion: String(schemaVersion) }),
+          ...(traceparent && { traceparent }),
         },
       });
 
@@ -315,6 +385,75 @@ export function getPubSubMessageBus(
       throw error;
     } finally {
       span.end();
+    }
+  }
+
+  /**
+   * Register an event handler, creating its Pub/Sub subscription right away if already started
+   */
+  function registerEventSubscriber<EventType extends Event>(
+    eventHandler: SingleMessageHandler<EventType>,
+    eventTypeNames: EventType['type'][],
+    settings?: SubscribeOptions,
+  ): void {
+    const explicitId = settings?.subscriptionId;
+    const rawHandler = eventHandler as SingleRawMessageHandlerWithoutContext<AnyMessage>;
+
+    if (explicitId) {
+      const taken = eventTypeNames.find((t) => subscriptionHandlers.get(explicitId)?.has(t));
+      if (taken) {
+        throw new EmmettError(
+          `Subscription id ${explicitId} is already registered for ${taken}. ` +
+            `Each handler needs its own id.`,
+        );
+      }
+    }
+
+    if (!explicitId && !settings?.fanOut && !defaultSubscriptionId) {
+      warnEphemeralSubscriptions();
+    }
+
+    for (const eventType of eventTypeNames) {
+      // Track as event type
+      eventTypes.add(eventType);
+
+      // Explicit id, else the bus subscription id (shared by every handler and replica of the
+      // service), else a unique one for this subscriber: fan-out, or no group configured
+      const subscriptionId =
+        explicitId ??
+        (settings?.fanOut ? undefined : defaultSubscriptionId) ??
+        generateUUID();
+
+      // Store handler associated with this subscription ID and type
+      const byType =
+        subscriptionHandlers.get(subscriptionId) ??
+        new Map<string, SingleRawMessageHandlerWithoutContext<AnyMessage>[]>();
+      const handlersOfType = byType.get(eventType) ?? [];
+      handlersOfType.push(rawHandler); // in place: a running listener holds this array
+      byType.set(eventType, handlersOfType);
+      subscriptionHandlers.set(subscriptionId, byType);
+      if (settings) {
+        subscriptionSettings.set(subscriptionKey(subscriptionId, eventType), settings);
+      }
+
+      // Get existing handlers or create new array
+      const existing = handlers.get(eventType) ?? [];
+
+      // Add handler to array (for compatibility)
+      handlers.set(eventType, [...existing, rawHandler]);
+
+      // Track subscription ID for this event type
+      const existingIds = eventSubscriptionIds.get(eventType) ?? [];
+      if (!existingIds.includes(subscriptionId)) {
+        eventSubscriptionIds.set(eventType, [...existingIds, subscriptionId]);
+      }
+
+      // If already started, create subscription immediately
+      if (started) {
+        createSubscriptionForType(eventType, 'event', subscriptionId).catch((error) => {
+          safeLog.error(logger, 'Failed to create subscription', error);
+        });
+      }
     }
   }
 
@@ -349,8 +488,14 @@ export function getPubSubMessageBus(
     /**
      * Schedule a message for future delivery
      *
-     * In production mode: Uses PubSub native scheduling
-     * In emulator mode: Stores in memory (emulator doesn't support scheduling)
+     * In emulator mode the message is kept in memory until `dequeue` returns it, and a restart
+     * loses it. Against real Pub/Sub it is published at once to the
+     * `<topicPrefix>-scheduled-messages` topic with a `publishTime` attribute, but Pub/Sub has
+     * no delayed delivery and nothing here consumes that topic, so the message is never
+     * delivered at the requested time. A publish failure is logged, not thrown. Use
+     * Cloud Scheduler and Cloud Tasks for time-based work.
+     *
+     * @deprecated Does not deliver on time against real Pub/Sub; see above.
      *
      * @param message - The message to schedule
      * @param when - When to deliver the message (afterInMs or at)
@@ -359,7 +504,10 @@ export function getPubSubMessageBus(
       message: MessageType,
       when?: { afterInMs: number } | { at: Date },
     ): void {
-      scheduler.schedule(message, when);
+      // `schedule` returns void in the Emmett interface, so a failure is logged, not thrown
+      scheduler.schedule(message, when).catch((error) => {
+        safeLog.error(logger, 'Failed to schedule message', error);
+      });
     },
 
     // ===== CommandProcessor Interface =====
@@ -419,8 +567,15 @@ export function getPubSubMessageBus(
     /**
      * Subscribe to events
      *
-     * Events can have multiple subscribers. Each subscription gets its own
-     * PubSub subscription to ensure all handlers receive all events.
+     * With a bus `subscriptionId` configured, the subscription is named after it: it survives
+     * restarts (events published while the service was down are delivered), replicas of the
+     * service share it so an event normally goes to one of them (Pub/Sub can deliver it again, so
+     * handlers must be idempotent), and every handler of the
+     * service for the same event type runs on it.
+     *
+     * Without a bus `subscriptionId` each subscriber gets its own subscription with a random id,
+     * so all of them receive all events but nothing survives a restart. Use that only for
+     * tests and local development.
      *
      * @param eventHandler - The handler function
      * @param eventTypes - Event types to subscribe to
@@ -439,41 +594,38 @@ export function getPubSubMessageBus(
       eventHandler: SingleMessageHandler<EventType>,
       ...eventTypeNames: EventType['type'][]
     ): void {
-      for (const eventType of eventTypeNames) {
-        // Track as event type
-        eventTypes.add(eventType);
+      registerEventSubscriber(eventHandler, eventTypeNames);
+    },
 
-        // Generate unique subscription ID for this subscriber
-        const subscriptionId = generateUUID();
-
-        // Store handler associated with this subscription ID
-        subscriptionHandlers.set(
-          subscriptionId,
-          eventHandler as SingleRawMessageHandlerWithoutContext<AnyMessage>,
-        );
-
-        // Get existing handlers or create new array
-        const existing = handlers.get(eventType) ?? [];
-
-        // Add handler to array (for compatibility)
-        handlers.set(eventType, [
-          ...existing,
-          eventHandler as SingleRawMessageHandlerWithoutContext<AnyMessage>,
-        ]);
-
-        // Track subscription ID for this event type
-        const existingIds = eventSubscriptionIds.get(eventType) ?? [];
-        eventSubscriptionIds.set(eventType, [...existingIds, subscriptionId]);
-
-        // If already started, create subscription immediately
-        if (started) {
-          createSubscriptionForType(eventType, 'event', subscriptionId).catch(
-            (error) => {
-              safeLog.error(logger, 'Failed to create subscription', error);
-            },
-          );
-        }
-      }
+    /**
+     * Subscribe to events with per-subscriber options
+     *
+     * For the uncommon cases `subscribe` does not cover: a subscription id other than the
+     * bus one, `fanOut` (every replica receives every event, for example to keep an
+     * in-memory cache current), a topic prefix of its own, and dead letter and retry policies
+     * for this subscriber only.
+     *
+     * @param eventHandler - The handler function
+     * @param eventTypeNames - Event types to subscribe to
+     * @param options - Subscriber options
+     * @throws EmmettError if the subscription id is already registered for one of the types
+     *
+     * @example
+     * ```typescript
+     * messageBus.subscribeWithOptions(refreshCache, ['PantryItemAdded'], { fanOut: true });
+     *
+     * messageBus.subscribeWithOptions(handler, ['PantryItemAdded'], {
+     *   topicPrefix: 'pantry',
+     *   deadLetterPolicy: { deadLetterTopic: 'shopping-list-dlq', maxDeliveryAttempts: 5 },
+     * });
+     * ```
+     */
+    subscribeWithOptions<EventType extends Event>(
+      eventHandler: SingleMessageHandler<EventType>,
+      eventTypeNames: EventType['type'][],
+      options: SubscribeOptions,
+    ): void {
+      registerEventSubscriber(eventHandler, eventTypeNames, options);
     },
 
     // ===== ScheduledMessageProcessor Interface =====
@@ -481,7 +633,10 @@ export function getPubSubMessageBus(
     /**
      * Dequeue scheduled messages that are ready for delivery
      *
-     * Only used in emulator mode. In production, PubSub handles scheduling.
+     * Returns what `schedule` kept in memory in emulator mode, and always an empty list against
+     * real Pub/Sub.
+     *
+     * @deprecated Does not deliver on time against real Pub/Sub; see `schedule`.
      *
      * @returns Array of scheduled messages ready for delivery
      *

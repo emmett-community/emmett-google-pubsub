@@ -80,6 +80,36 @@ const startEmulator = async () => {
   return container;
 };
 
+// The container is healthy before its Pub/Sub emulator is warm: the first calls can take longer
+// than the bus setup timeout. Round-trip a topic until the emulator answers promptly.
+const warmUpPubSub = async (
+  host: string = emulatorHost,
+  port: number = pubsubPort,
+): Promise<void> => {
+  await waitFor(
+    async () => {
+      const probe = new PubSub({ projectId, apiEndpoint: `${host}:${port}` });
+      try {
+        const attempt = (async () => {
+          const [topic] = await probe.createTopic(`warmup-${Math.random().toString(36).slice(2, 10)}`);
+          await topic.delete();
+        })();
+        await Promise.race([
+          attempt,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('warm-up timeout')), 3000)),
+        ]);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        await probe.close().catch(() => undefined);
+      }
+    },
+    90000,
+    1000,
+  );
+};
+
 const createMessageBus = (options?: { topicPrefix?: string }) => {
   const pubsub = new PubSub({
     projectId,
@@ -96,7 +126,8 @@ const createMessageBus = (options?: { topicPrefix?: string }) => {
 
 beforeAll(async () => {
   emulator = await startEmulator();
-});
+  await warmUpPubSub();
+}, 230000);
 
 afterAll(async () => {
   if (emulator) {
@@ -407,7 +438,12 @@ describe('PubSub message bus e2e', () => {
         .withEnvironment({ PROJECT_ID: projectId, HEALTHCHECK_PORT: '4400' })
         .withWaitStrategy(Wait.forHealthCheck().withStartupTimeout(120000))
         .start();
-    }, 130000);
+
+      await warmUpPubSub(
+        idleRecoveryContainer.getHost(),
+        idleRecoveryContainer.getMappedPort(8085),
+      );
+    }, 230000);
 
     afterAll(async () => {
       if (idleRecoveryContainer) {
@@ -488,13 +524,26 @@ describe('PubSub message bus e2e', () => {
           1000,
         );
 
-        await messageBus.publish({
-          type: 'IdleRecoveryEvent',
-          data: { id: 'evt-after-restart', value: 'post-restart' },
-        });
-
-        await waitFor(() => receivedEvents.length === 2, 20000);
-        expect((receivedEvents[1].data as any).id).toBe('evt-after-restart');
+        // The restarted emulator lost every topic and subscription, and the watchdog only
+        // recreates the subscription on its next tick. A message published before that lands
+        // on a topic with no subscription and is gone, so keep publishing until one arrives:
+        // what is asserted is that delivery recovers, not that a single publish races the tick.
+        let attempt = 0;
+        await waitFor(
+          async () => {
+            if (receivedEvents.length >= 2) {
+              return true;
+            }
+            await messageBus.publish({
+              type: 'IdleRecoveryEvent',
+              data: { id: `evt-after-restart-${attempt++}`, value: 'post-restart' },
+            });
+            return false;
+          },
+          30000,
+          1000,
+        );
+        expect((receivedEvents[1].data as any).id).toMatch(/^evt-after-restart-\d+$/);
       } finally {
         await messageBus.close();
       }

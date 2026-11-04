@@ -75,16 +75,18 @@ function getMessageKind(message: Message): 'command' | 'event' {
  * Serialize a Command or Event to a Buffer for PubSub transport
  *
  * @param message - The message to serialize
+ * @param messageId - Id for the envelope. Defaults to a new UUID; pass the id the message
+ *   already has (for example the event store's) so it stays stable across publications.
  * @returns Buffer containing the serialized message envelope
  */
-export function serialize(message: Command | Event): Buffer {
+export function serialize(message: Command | Event, messageId: string = randomUUID()): Buffer {
   const envelope = {
     type: message.type,
     kind: getMessageKind(message),
     data: transformDatesToMarkers(message.data),
     metadata: 'metadata' in message ? transformDatesToMarkers(message.metadata) : undefined,
     timestamp: new Date().toISOString(),
-    messageId: randomUUID(),
+    messageId,
   };
 
   const json = JSON.stringify(envelope);
@@ -93,6 +95,9 @@ export function serialize(message: Command | Event): Buffer {
 
 /**
  * Deserialize a Buffer from PubSub into a Command or Event
+ *
+ * The metadata is returned exactly as it was published. Use `deserializeWithMetadata` to also
+ * get the transport metadata (`messageId`, `schemaVersion`, `traceparent`).
  *
  * @param buffer - The buffer containing the serialized message
  * @returns The deserialized message
@@ -115,6 +120,40 @@ export function deserialize<T extends Command | Event>(buffer: Buffer): T {
       `Failed to deserialize message: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+/**
+ * Deserialize a Buffer from PubSub the way handlers receive it: the metadata also carries the
+ * envelope `messageId` (unless the published metadata already has the event's own) and, from the
+ * Pub/Sub attributes, `schemaVersion` and `traceparent`
+ * when present. Values already in the published metadata win over the attributes.
+ *
+ * @param buffer - The buffer containing the serialized message
+ * @param attributes - Attributes of the Pub/Sub message, if any
+ * @returns The deserialized message
+ * @throws Error if the buffer cannot be deserialized
+ */
+export function deserializeWithMetadata<T extends Command | Event>(
+  buffer: Buffer,
+  attributes?: Record<string, string> | null,
+): T {
+  const message = deserialize<T>(buffer);
+  const envelope = JSON.parse(buffer.toString('utf-8'), dateReviver) as PubSubMessageEnvelope;
+
+  const published = ('metadata' in message ? message.metadata : {}) as Record<string, unknown>;
+  // The messageId in the published metadata is the event's own (set by the event store) and is
+  // the deduplication key; the envelope one only fills in when the event has none
+  const metadata: Record<string, unknown> = {
+    ...(envelope.messageId !== undefined && { messageId: envelope.messageId }),
+    ...published,
+    ...(published.schemaVersion === undefined &&
+      attributes?.schemaVersion !== undefined && { schemaVersion: attributes.schemaVersion }),
+    ...(attributes?.traceparent !== undefined && { traceparent: attributes.traceparent }),
+  };
+
+  return (
+    Object.keys(metadata).length > 0 ? { ...message, metadata } : message
+  ) as T;
 }
 
 /**

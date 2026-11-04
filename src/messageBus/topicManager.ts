@@ -107,6 +107,9 @@ export async function getOrCreateTopic(
  * @param topic - The topic to subscribe to
  * @param subscriptionName - Name of the subscription
  * @param options - Subscription options
+ * @param timeoutMs - Maximum time to wait for each underlying call
+ * @param pubsub - PubSub client. When given and a dead letter topic is configured, that topic
+ *   is created if missing and referenced by its fully qualified name, as the API requires.
  * @returns The subscription instance
  */
 export async function getOrCreateSubscription(
@@ -114,8 +117,13 @@ export async function getOrCreateSubscription(
   subscriptionName: string,
   options?: SubscriptionOptions,
   timeoutMs = DEFAULT_SETUP_TIMEOUT_MS,
+  pubsub?: PubSub,
 ): Promise<Subscription> {
-  const subscription = topic.subscription(subscriptionName);
+  // The client options (flow control, client-side ack deadline) belong to this process, not to
+  // the stored subscription, so they are passed on every call, whether it exists or not
+  const subscription = options?.subscriber
+    ? topic.subscription(subscriptionName, options.subscriber)
+    : topic.subscription(subscriptionName);
 
   try {
     const [exists] = await withSetupTimeout(
@@ -125,6 +133,13 @@ export async function getOrCreateSubscription(
     );
 
     if (!exists) {
+      let deadLetterTopic = options?.deadLetterPolicy?.deadLetterTopic;
+      if (deadLetterTopic && pubsub) {
+        // Accept both a plain topic name and a fully qualified one (projects/<p>/topics/<t>)
+        const shortName = deadLetterTopic.split('/').pop() as string;
+        deadLetterTopic = (await getOrCreateTopic(pubsub, shortName, timeoutMs)).name;
+      }
+
       const config = {
         ...(options?.ackDeadlineSeconds && {
           ackDeadlineSeconds: options.ackDeadlineSeconds,
@@ -141,9 +156,7 @@ export async function getOrCreateSubscription(
         }),
         ...(options?.deadLetterPolicy && {
           deadLetterPolicy: {
-            ...(options.deadLetterPolicy.deadLetterTopic && {
-              deadLetterTopic: options.deadLetterPolicy.deadLetterTopic,
-            }),
+            ...(deadLetterTopic && { deadLetterTopic }),
             ...(options.deadLetterPolicy.maxDeliveryAttempts && {
               maxDeliveryAttempts: options.deadLetterPolicy.maxDeliveryAttempts,
             }),
