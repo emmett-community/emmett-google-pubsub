@@ -34,7 +34,10 @@ import {
   getOrCreateTopic,
   deleteSubscriptions,
 } from './topicManager';
-import { createMessageListener, startSubscriptionWatchdog } from './messageHandler';
+import {
+  createMessageListener,
+  startSubscriptionWatchdog,
+} from './messageHandler';
 import { generateUUID } from './utils';
 import { safeLog } from './observability';
 import { toTraceparent } from './tracing';
@@ -47,7 +50,9 @@ const tracer = trace.getTracer('@emmett-community/emmett-google-pubsub');
  * @param messageType - The message type string
  * @returns 'command' if type contains 'Command', otherwise 'event'
  */
-function determineMessageKindFallback(messageType: string): 'command' | 'event' {
+function determineMessageKindFallback(
+  messageType: string,
+): 'command' | 'event' {
   const typeStr = messageType.toLowerCase();
   return typeStr.includes('command') ? 'command' : 'event';
 }
@@ -217,7 +222,9 @@ export function getPubSubMessageBus(
       settings?.deadLetterPolicy || settings?.retryPolicy
         ? {
             ...config.subscriptionOptions,
-            ...(settings.deadLetterPolicy && { deadLetterPolicy: settings.deadLetterPolicy }),
+            ...(settings.deadLetterPolicy && {
+              deadLetterPolicy: settings.deadLetterPolicy,
+            }),
             ...(settings.retryPolicy && { retryPolicy: settings.retryPolicy }),
           }
         : config.subscriptionOptions;
@@ -237,7 +244,9 @@ export function getPubSubMessageBus(
     // handlers as the original subscription did.
     const handlersForListener = (() => {
       if (kind === 'event' && subscriptionId) {
-        const registered = subscriptionHandlers.get(subscriptionId)?.get(messageType);
+        const registered = subscriptionHandlers
+          .get(subscriptionId)
+          ?.get(messageType);
         const handlersOfSubscription = new Map<
           string,
           SingleRawMessageHandlerWithoutContext<AnyMessage>[]
@@ -259,7 +268,11 @@ export function getPubSubMessageBus(
       topic: Topic;
       subscription: Subscription;
     }> => {
-      const topic = await getOrCreateTopic(config.pubsub, topicName, setupTimeoutMs);
+      const topic = await getOrCreateTopic(
+        config.pubsub,
+        topicName,
+        setupTimeoutMs,
+      );
       const subscription = await getOrCreateSubscription(
         topic,
         subName,
@@ -267,7 +280,13 @@ export function getPubSubMessageBus(
         setupTimeoutMs,
         config.pubsub,
       );
-      createMessageListener(subscription, messageType, kind, handlersForListener, logger);
+      createMessageListener(
+        subscription,
+        messageType,
+        kind,
+        handlersForListener,
+        logger,
+      );
       return { topic, subscription };
     };
 
@@ -308,9 +327,10 @@ export function getPubSubMessageBus(
     message: Message,
     kind: 'command' | 'event',
   ): Promise<void> {
-    const spanName = kind === 'command'
-      ? 'emmett.pubsub.send_command'
-      : 'emmett.pubsub.publish_event';
+    const spanName =
+      kind === 'command'
+        ? 'emmett.pubsub.send_command'
+        : 'emmett.pubsub.publish_event';
 
     const span = tracer.startSpan(spanName, {
       attributes: { 'emmett.message.kind': kind },
@@ -356,9 +376,12 @@ export function getPubSubMessageBus(
 
       // Keep the id the message already has (e.g. from the event store) so it is stable
       // across publications; consumers deduplicate by it
-      const metadata = (message as { metadata?: Record<string, unknown> }).metadata;
+      const metadata = (message as { metadata?: Record<string, unknown> })
+        .metadata;
       const messageId =
-        typeof metadata?.messageId === 'string' ? metadata.messageId : generateUUID();
+        typeof metadata?.messageId === 'string'
+          ? metadata.messageId
+          : generateUUID();
       const schemaVersion = metadata?.schemaVersion;
       const traceparent = toTraceparent(span.spanContext());
 
@@ -372,7 +395,9 @@ export function getPubSubMessageBus(
           messageType: message.type,
           messageKind: kind,
           messageId,
-          ...(schemaVersion !== undefined && { schemaVersion: String(schemaVersion) }),
+          ...(schemaVersion !== undefined && {
+            schemaVersion: String(schemaVersion as string | number),
+          }),
           ...(traceparent && { traceparent }),
         },
       });
@@ -397,10 +422,13 @@ export function getPubSubMessageBus(
     settings?: SubscribeOptions,
   ): void {
     const explicitId = settings?.subscriptionId;
-    const rawHandler = eventHandler as SingleRawMessageHandlerWithoutContext<AnyMessage>;
+    const rawHandler =
+      eventHandler as SingleRawMessageHandlerWithoutContext<AnyMessage>;
 
     if (explicitId) {
-      const taken = eventTypeNames.find((t) => subscriptionHandlers.get(explicitId)?.has(t));
+      const taken = eventTypeNames.find((t) =>
+        subscriptionHandlers.get(explicitId)?.has(t),
+      );
       if (taken) {
         throw new EmmettError(
           `Subscription id ${explicitId} is already registered for ${taken}. ` +
@@ -433,7 +461,10 @@ export function getPubSubMessageBus(
       byType.set(eventType, handlersOfType);
       subscriptionHandlers.set(subscriptionId, byType);
       if (settings) {
-        subscriptionSettings.set(subscriptionKey(subscriptionId, eventType), settings);
+        subscriptionSettings.set(
+          subscriptionKey(subscriptionId, eventType),
+          settings,
+        );
       }
 
       // Get existing handlers or create new array
@@ -450,9 +481,11 @@ export function getPubSubMessageBus(
 
       // If already started, create subscription immediately
       if (started) {
-        createSubscriptionForType(eventType, 'event', subscriptionId).catch((error) => {
-          safeLog.error(logger, 'Failed to create subscription', error);
-        });
+        createSubscriptionForType(eventType, 'event', subscriptionId).catch(
+          (error) => {
+            safeLog.error(logger, 'Failed to create subscription', error);
+          },
+        );
       }
     }
   }
@@ -800,7 +833,10 @@ export function getPubSubMessageBus(
             // Cleanup subscriptions if configured
             if (cleanupOnClose) {
               safeLog.debug(logger, 'Cleaning up subscriptions');
-              await deleteSubscriptions(subscriptions.map((s) => s.subscription), logger);
+              await deleteSubscriptions(
+                subscriptions.map((s) => s.subscription),
+                logger,
+              );
             }
 
             started = false;

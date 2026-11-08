@@ -27,25 +27,35 @@ describe('Subscriptions Integration Tests', () => {
     it('hands the message id to handlers in the metadata', async () => {
       const bus = track(createInMemoryMessageBus());
       const received: TestEvent[] = [];
-      bus.subscribe(async (event: TestEvent) => void received.push(event), 'TestEvent');
+      bus.subscribe(
+        (event: TestEvent) => Promise.resolve(void received.push(event)),
+        'TestEvent',
+      );
       await bus.start();
 
       await bus.publish(createTestEvent('1', 'v'));
       await waitFor(() => received.length === 1);
 
       expect(metadataOf(received[0])).toMatchObject({
-        messageId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+        messageId: expect.stringMatching(/^[0-9a-f-]{36}$/) as string,
       });
     });
 
     it('keeps the message id the event already had, such as the event store one', async () => {
       const bus = track(createInMemoryMessageBus());
       const received: TestEvent[] = [];
-      bus.subscribe(async (event: TestEvent) => void received.push(event), 'TestEvent');
+      bus.subscribe(
+        (event: TestEvent) => Promise.resolve(void received.push(event)),
+        'TestEvent',
+      );
       await bus.start();
 
-      await bus.publish(withMetadata({ messageId: 'store-1', schemaVersion: 2 }));
-      await bus.publish(withMetadata({ messageId: 'store-1', schemaVersion: 2 }));
+      await bus.publish(
+        withMetadata({ messageId: 'store-1', schemaVersion: 2 }),
+      );
+      await bus.publish(
+        withMetadata({ messageId: 'store-1', schemaVersion: 2 }),
+      );
       await waitFor(() => received.length === 2);
 
       expect(received.map((e) => metadataOf(e)?.messageId)).toEqual([
@@ -58,16 +68,23 @@ describe('Subscriptions Integration Tests', () => {
     it('publishes messageId and schemaVersion as attributes', async () => {
       const pubsub = new InMemoryPubSub();
       const prefix = 'attrs';
-      const bus = track(createInMemoryMessageBus({ pubsub, topicPrefix: prefix }));
+      const bus = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: prefix }),
+      );
       const raw = pubsub.topic(topicOf(prefix)).subscription('raw');
       await raw.create();
       const seen: Array<Record<string, string> | undefined> = [];
-      raw.on('message', (m: { attributes?: Record<string, string>; ack(): void }) => {
-        seen.push(m.attributes);
-        m.ack();
-      });
+      raw.on(
+        'message',
+        (m: { attributes?: Record<string, string>; ack(): void }) => {
+          seen.push(m.attributes);
+          m.ack();
+        },
+      );
 
-      await bus.publish(withMetadata({ messageId: 'store-9', schemaVersion: 2 }));
+      await bus.publish(
+        withMetadata({ messageId: 'store-9', schemaVersion: 2 }),
+      );
       await waitFor(() => seen.length === 1);
 
       expect(seen[0]).toMatchObject({
@@ -81,19 +98,32 @@ describe('Subscriptions Integration Tests', () => {
     it('exposes the traceparent attribute to handlers', async () => {
       const pubsub = new InMemoryPubSub();
       const prefix = 'trace';
-      const bus = track(createInMemoryMessageBus({ pubsub, topicPrefix: prefix }));
+      const bus = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: prefix }),
+      );
       const received: TestEvent[] = [];
-      bus.subscribe(async (event: TestEvent) => void received.push(event), 'TestEvent');
+      bus.subscribe(
+        (event: TestEvent) => Promise.resolve(void received.push(event)),
+        'TestEvent',
+      );
       await bus.start();
-      const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+      const traceparent =
+        '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
 
       await pubsub.topic(topicOf(prefix)).publishMessage({
         data: serialize(createTestEvent('1', 'v') as Event, 'm-1'),
-        attributes: { messageType: 'TestEvent', messageKind: 'event', traceparent },
+        attributes: {
+          messageType: 'TestEvent',
+          messageKind: 'event',
+          traceparent,
+        },
       });
       await waitFor(() => received.length === 1);
 
-      expect(metadataOf(received[0])).toMatchObject({ messageId: 'm-1', traceparent });
+      expect(metadataOf(received[0])).toMatchObject({
+        messageId: 'm-1',
+        traceparent,
+      });
     });
   });
 
@@ -105,8 +135,14 @@ describe('Subscriptions Integration Tests', () => {
       const replicaB = track(createInMemoryMessageBus(options));
       const gotA: string[] = [];
       const gotB: string[] = [];
-      replicaA.subscribe(async (e: TestEvent) => void gotA.push(e.data.id), 'TestEvent');
-      replicaB.subscribe(async (e: TestEvent) => void gotB.push(e.data.id), 'TestEvent');
+      replicaA.subscribe(
+        (e: TestEvent) => Promise.resolve(void gotA.push(e.data.id)),
+        'TestEvent',
+      );
+      replicaB.subscribe(
+        (e: TestEvent) => Promise.resolve(void gotB.push(e.data.id)),
+        'TestEvent',
+      );
       await replicaA.start();
       await replicaB.start();
 
@@ -126,8 +162,14 @@ describe('Subscriptions Integration Tests', () => {
     it('runs every handler of the service for an event type on one subscription', async () => {
       const bus = track(createInMemoryMessageBus({ subscriptionId: 'svc' }));
       const calls: string[] = [];
-      bus.subscribe(async () => void calls.push('first'), 'TestEvent');
-      bus.subscribe(async () => void calls.push('second'), 'TestEvent');
+      bus.subscribe(
+        () => Promise.resolve(void calls.push('first')),
+        'TestEvent',
+      );
+      bus.subscribe(
+        () => Promise.resolve(void calls.push('second')),
+        'TestEvent',
+      );
       await bus.start();
 
       await bus.publish(createTestEvent('1', 'v'));
@@ -140,9 +182,15 @@ describe('Subscriptions Integration Tests', () => {
     it('runs handlers registered after start too', async () => {
       const bus = track(createInMemoryMessageBus({ subscriptionId: 'svc' }));
       const calls: string[] = [];
-      bus.subscribe(async () => void calls.push('before'), 'TestEvent');
+      bus.subscribe(
+        () => Promise.resolve(void calls.push('before')),
+        'TestEvent',
+      );
       await bus.start();
-      bus.subscribe(async () => void calls.push('after'), 'TestEvent');
+      bus.subscribe(
+        () => Promise.resolve(void calls.push('after')),
+        'TestEvent',
+      );
 
       await bus.publish(createTestEvent('1', 'v'));
       await waitFor(() => calls.length === 2);
@@ -154,8 +202,14 @@ describe('Subscriptions Integration Tests', () => {
       const bus = track(createInMemoryMessageBus({ subscriptionId: 'svc' }));
       const forTest: string[] = [];
       const forOther: string[] = [];
-      bus.subscribe(async (e: TestEvent) => void forTest.push(e.type), 'TestEvent');
-      bus.subscribe(async (e: Event) => void forOther.push(e.type), 'OtherEvent');
+      bus.subscribe(
+        (e: TestEvent) => Promise.resolve(void forTest.push(e.type)),
+        'TestEvent',
+      );
+      bus.subscribe(
+        (e: Event) => Promise.resolve(void forOther.push(e.type)),
+        'OtherEvent',
+      );
       await bus.start();
 
       await bus.publish(createTestEvent('1', 'v'));
@@ -174,12 +228,20 @@ describe('Subscriptions Integration Tests', () => {
       const replicaB = track(createInMemoryMessageBus(options));
       const gotA: string[] = [];
       const gotB: string[] = [];
-      replicaA.subscribeWithOptions(async (e: TestEvent) => void gotA.push(e.data.id), ['TestEvent'], {
-        fanOut: true,
-      });
-      replicaB.subscribeWithOptions(async (e: TestEvent) => void gotB.push(e.data.id), ['TestEvent'], {
-        fanOut: true,
-      });
+      replicaA.subscribeWithOptions(
+        (e: TestEvent) => Promise.resolve(void gotA.push(e.data.id)),
+        ['TestEvent'],
+        {
+          fanOut: true,
+        },
+      );
+      replicaB.subscribeWithOptions(
+        (e: TestEvent) => Promise.resolve(void gotB.push(e.data.id)),
+        ['TestEvent'],
+        {
+          fanOut: true,
+        },
+      );
       await replicaA.start();
       await replicaB.start();
 
@@ -188,11 +250,21 @@ describe('Subscriptions Integration Tests', () => {
     });
 
     it('warns once, outside the emulator, when subscribing without a subscription id', () => {
-      const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
-      const bus = track(createInMemoryMessageBus({ useEmulator: false, observability: { logger } }));
+      const logger = {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
+      const bus = track(
+        createInMemoryMessageBus({
+          useEmulator: false,
+          observability: { logger },
+        }),
+      );
 
-      bus.subscribe(async () => undefined, 'TestEvent');
-      bus.subscribe(async () => undefined, 'OtherEvent');
+      bus.subscribe(() => Promise.resolve(undefined), 'TestEvent');
+      bus.subscribe(() => Promise.resolve(undefined), 'OtherEvent');
 
       const warnings = logger.warn.mock.calls.filter(([, message]) =>
         String(message).includes('subscriptionId'),
@@ -201,7 +273,12 @@ describe('Subscriptions Integration Tests', () => {
     });
 
     it('does not warn when a subscription id is configured', () => {
-      const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+      const logger = {
+        debug: jest.fn(),
+        info: jest.fn(),
+        warn: jest.fn(),
+        error: jest.fn(),
+      };
       const bus = track(
         createInMemoryMessageBus({
           useEmulator: false,
@@ -210,7 +287,7 @@ describe('Subscriptions Integration Tests', () => {
         }),
       );
 
-      bus.subscribe(async () => undefined, 'TestEvent');
+      bus.subscribe(() => Promise.resolve(undefined), 'TestEvent');
 
       expect(logger.warn).not.toHaveBeenCalled();
     });
@@ -221,12 +298,20 @@ describe('Subscriptions Integration Tests', () => {
       const bus = track(createInMemoryMessageBus());
       const first: string[] = [];
       const second: string[] = [];
-      bus.subscribeWithOptions(async (e: TestEvent) => void first.push(e.data.id), ['TestEvent'], {
-        subscriptionId: 'one',
-      });
-      bus.subscribeWithOptions(async (e: TestEvent) => void second.push(e.data.id), ['TestEvent'], {
-        subscriptionId: 'two',
-      });
+      bus.subscribeWithOptions(
+        (e: TestEvent) => Promise.resolve(void first.push(e.data.id)),
+        ['TestEvent'],
+        {
+          subscriptionId: 'one',
+        },
+      );
+      bus.subscribeWithOptions(
+        (e: TestEvent) => Promise.resolve(void second.push(e.data.id)),
+        ['TestEvent'],
+        {
+          subscriptionId: 'two',
+        },
+      );
       await bus.start();
 
       await bus.publish(createTestEvent('1', 'v'));
@@ -235,18 +320,30 @@ describe('Subscriptions Integration Tests', () => {
 
     it('rejects registering the same subscription id twice for one event type', () => {
       const bus = track(createInMemoryMessageBus());
-      bus.subscribeWithOptions(async () => undefined, ['TestEvent'], { subscriptionId: 'dup' });
+      bus.subscribeWithOptions(
+        () => Promise.resolve(undefined),
+        ['TestEvent'],
+        {
+          subscriptionId: 'dup',
+        },
+      );
 
       expect(() =>
-        bus.subscribeWithOptions(async () => undefined, ['TestEvent'], { subscriptionId: 'dup' }),
+        bus.subscribeWithOptions(
+          () => Promise.resolve(undefined),
+          ['TestEvent'],
+          {
+            subscriptionId: 'dup',
+          },
+        ),
       ).toThrow(/already registered/);
     });
 
     it('without a bus subscription id, plain subscribe gives each handler its own subscription', async () => {
       const bus = track(createInMemoryMessageBus());
       let calls = 0;
-      bus.subscribe(async () => void calls++, 'TestEvent');
-      bus.subscribe(async () => void calls++, 'TestEvent');
+      bus.subscribe(() => Promise.resolve(void calls++), 'TestEvent');
+      bus.subscribe(() => Promise.resolve(void calls++), 'TestEvent');
       await bus.start();
 
       await bus.publish(createTestEvent('1', 'v'));
@@ -257,11 +354,15 @@ describe('Subscriptions Integration Tests', () => {
   describe('per-subscription topic prefix', () => {
     it('reads events published under another prefix', async () => {
       const pubsub = new InMemoryPubSub();
-      const publisher = track(createInMemoryMessageBus({ pubsub, topicPrefix: 'pantry' }));
-      const consumer = track(createInMemoryMessageBus({ pubsub, topicPrefix: 'shopping' }));
+      const publisher = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: 'pantry' }),
+      );
+      const consumer = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: 'shopping' }),
+      );
       const received: string[] = [];
       consumer.subscribeWithOptions(
-        async (e: TestEvent) => void received.push(e.data.id),
+        (e: TestEvent) => Promise.resolve(void received.push(e.data.id)),
         ['TestEvent'],
         { subscriptionId: 'from-pantry', topicPrefix: 'pantry' },
       );
@@ -278,17 +379,24 @@ describe('Subscriptions Integration Tests', () => {
     it('creates the topic, redelivers up to the max attempts and then dead-letters', async () => {
       const pubsub = new InMemoryPubSub();
       const prefix = 'dlq';
-      const bus = track(createInMemoryMessageBus({ pubsub, topicPrefix: prefix }));
+      const bus = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: prefix }),
+      );
       let attempts = 0;
       bus.subscribeWithOptions(
-        async () => {
+        () => {
           attempts++;
           throw new Error('boom');
+
+          return Promise.resolve();
         },
         ['TestEvent'],
         {
           subscriptionId: 'failing',
-          deadLetterPolicy: { deadLetterTopic: 'failing-dlq', maxDeliveryAttempts: 3 },
+          deadLetterPolicy: {
+            deadLetterTopic: 'failing-dlq',
+            maxDeliveryAttempts: 3,
+          },
         },
       );
       await bus.start();
@@ -298,10 +406,13 @@ describe('Subscriptions Integration Tests', () => {
       const dead: Array<{ attributes?: Record<string, string> }> = [];
       const dlqSub = pubsub.topic('failing-dlq').subscription('inspect');
       await dlqSub.create();
-      dlqSub.on('message', (m: { attributes?: Record<string, string>; ack(): void }) => {
-        dead.push(m);
-        m.ack();
-      });
+      dlqSub.on(
+        'message',
+        (m: { attributes?: Record<string, string>; ack(): void }) => {
+          dead.push(m);
+          m.ack();
+        },
+      );
 
       await bus.publish(withMetadata({ messageId: 'poison-1' }));
       await waitFor(() => dead.length === 1);
@@ -312,16 +423,23 @@ describe('Subscriptions Integration Tests', () => {
 
     it('does not dead-letter a message that succeeds on retry', async () => {
       const pubsub = new InMemoryPubSub();
-      const bus = track(createInMemoryMessageBus({ pubsub, topicPrefix: 'flaky' }));
+      const bus = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: 'flaky' }),
+      );
       let attempts = 0;
       bus.subscribeWithOptions(
-        async () => {
+        () => {
           if (++attempts < 2) throw new Error('transient');
+
+          return Promise.resolve();
         },
         ['TestEvent'],
         {
           subscriptionId: 'flaky',
-          deadLetterPolicy: { deadLetterTopic: 'flaky-dlq', maxDeliveryAttempts: 5 },
+          deadLetterPolicy: {
+            deadLetterTopic: 'flaky-dlq',
+            maxDeliveryAttempts: 5,
+          },
         },
       );
       await bus.start();
@@ -342,23 +460,35 @@ describe('Subscriptions Integration Tests', () => {
     it('ignores ALREADY_EXISTS (code 6) from topic.create()', async () => {
       const pubsub = new InMemoryPubSub();
       const prefix = 'race';
-      const bus = track(createInMemoryMessageBus({ pubsub, topicPrefix: prefix }));
+      const bus = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: prefix }),
+      );
       jest
         .spyOn(pubsub.topic(topicOf(prefix)), 'create')
-        .mockRejectedValue(Object.assign(new Error('already exists'), { code: 6 }));
+        .mockRejectedValue(
+          Object.assign(new Error('already exists'), { code: 6 }),
+        );
 
-      await expect(bus.publish(createTestEvent('1', 'v'))).resolves.toBeUndefined();
+      await expect(
+        bus.publish(createTestEvent('1', 'v')),
+      ).resolves.toBeUndefined();
     });
 
     it('still throws other errors from topic.create()', async () => {
       const pubsub = new InMemoryPubSub();
       const prefix = 'race-other';
-      const bus = track(createInMemoryMessageBus({ pubsub, topicPrefix: prefix }));
+      const bus = track(
+        createInMemoryMessageBus({ pubsub, topicPrefix: prefix }),
+      );
       jest
         .spyOn(pubsub.topic(topicOf(prefix)), 'create')
-        .mockRejectedValue(Object.assign(new Error('permission denied'), { code: 7 }));
+        .mockRejectedValue(
+          Object.assign(new Error('permission denied'), { code: 7 }),
+        );
 
-      await expect(bus.publish(createTestEvent('1', 'v'))).rejects.toThrow('permission denied');
+      await expect(bus.publish(createTestEvent('1', 'v'))).rejects.toThrow(
+        'permission denied',
+      );
     });
   });
 });

@@ -1,4 +1,4 @@
-import type { Message } from '@event-driven-io/emmett';
+import type { Command, Message } from '@event-driven-io/emmett';
 import { createInMemoryMessageBus, InMemoryPubSub } from '../../src/testing';
 import { getTestMessageBus, createTestCommand, waitFor } from './helpers';
 
@@ -240,12 +240,11 @@ describe('Scheduling Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedCommands: Message[] = [];
 
-      messageBus.handle(
-        async (command: Message) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Message) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -262,7 +261,7 @@ describe('Scheduling Integration Tests', () => {
         expect(scheduled).toHaveLength(1);
 
         // In a real application, you would send the dequeued message
-        await messageBus.send(scheduled[0].message as any);
+        await messageBus.send(scheduled[0].message as Command);
 
         await waitFor(() => receivedCommands.length > 0);
 
@@ -325,7 +324,12 @@ describe('Scheduling Integration Tests', () => {
 
 describe('scheduling against real Pub/Sub (not emulator mode)', () => {
   it('logs a publish failure instead of leaving an unhandled rejection', async () => {
-    const logger = { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
+    const logger = {
+      debug: jest.fn(),
+      info: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+    };
     const pubsub = new InMemoryPubSub();
     const prefix = 'sched-fail';
     jest
@@ -341,7 +345,9 @@ describe('scheduling against real Pub/Sub (not emulator mode)', () => {
     process.on('unhandledRejection', unhandled);
 
     try {
-      bus.schedule({ type: 'LaterEvent', data: {} } as Message, { afterInMs: 1000 });
+      bus.schedule({ type: 'LaterEvent', data: {} } as Message, {
+        afterInMs: 1000,
+      });
       await new Promise((resolve) => setTimeout(resolve, 50));
 
       expect(unhandled).not.toHaveBeenCalled();

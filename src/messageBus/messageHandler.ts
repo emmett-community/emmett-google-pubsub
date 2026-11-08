@@ -1,4 +1,7 @@
-import type { Message as PubSubMessage, Subscription } from '@google-cloud/pubsub';
+import type {
+  Message as PubSubMessage,
+  Subscription,
+} from '@google-cloud/pubsub';
 import type {
   AnyMessage,
   Command,
@@ -29,34 +32,12 @@ export function shouldRetry(error: unknown): boolean {
     return true;
   }
 
-  const errorMessage = error.message.toLowerCase();
-
-  // Network/timeout errors - retry
-  if (
-    errorMessage.includes('network') ||
-    errorMessage.includes('timeout') ||
-    errorMessage.includes('econnrefused') ||
-    errorMessage.includes('enotfound') ||
-    errorMessage.includes('unavailable')
-  ) {
-    return true;
-  }
-
-  // EmmettError and validation errors - don't retry (business logic errors)
+  // EmmettError - don't retry (business logic errors)
   if (error instanceof EmmettError) {
     return false;
   }
 
-  if (
-    errorMessage.includes('validation') ||
-    errorMessage.includes('invalid') ||
-    errorMessage.includes('not found') ||
-    errorMessage.includes('already exists')
-  ) {
-    return false;
-  }
-
-  // Default to retry for unknown errors
+  // Any other error is retried, whatever its message says
   return true;
 }
 
@@ -100,7 +81,10 @@ export async function handleCommandMessage(
     }
 
     // Deserialize the command
-    const command = deserializeWithMetadata<Command>(message.data, message.attributes);
+    const command = deserializeWithMetadata<Command>(
+      message.data,
+      message.attributes,
+    );
 
     // Execute the handler
     const handler = commandHandlers[0];
@@ -159,7 +143,10 @@ export async function handleEventMessage(
     }
 
     // Deserialize the event
-    const event = deserializeWithMetadata<Event>(message.data, message.attributes);
+    const event = deserializeWithMetadata<Event>(
+      message.data,
+      message.attributes,
+    );
 
     // Execute all handlers sequentially
     for (const handler of eventHandlers) {
@@ -213,7 +200,7 @@ export function createMessageListener(
   handlers: Map<string, SingleRawMessageHandlerWithoutContext<AnyMessage>[]>,
   logger?: Logger,
 ): void {
-  subscription.on('message', async (message: PubSubMessage) => {
+  const onMessage = async (message: PubSubMessage): Promise<void> => {
     try {
       // Route to appropriate handler based on kind
       const result =
@@ -232,6 +219,10 @@ export function createMessageListener(
       safeLog.error(logger, 'Unexpected error in message listener', error);
       message.nack();
     }
+  };
+
+  subscription.on('message', (message: PubSubMessage) => {
+    void onMessage(message);
   });
 
   subscription.on('error', (error) => {

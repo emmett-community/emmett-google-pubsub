@@ -11,7 +11,9 @@ const topicWith = (exists: boolean) => {
 };
 
 describe('Subscriber (client) options', () => {
-  const subscriber = { flowControl: { maxMessages: 5, allowExcessMessages: false } };
+  const subscriber = {
+    flowControl: { maxMessages: 5, allowExcessMessages: false },
+  };
 
   it('passes them to the client subscription when it already exists', async () => {
     const { topic, topicMock, subscription } = topicWith(true);
@@ -25,10 +27,15 @@ describe('Subscriber (client) options', () => {
   it('passes them when the subscription has to be created, and does not store them', async () => {
     const { topic, topicMock, subscription } = topicWith(false);
 
-    await getOrCreateSubscription(topic, 'sub', { subscriber, ackDeadlineSeconds: 30 });
+    await getOrCreateSubscription(topic, 'sub', {
+      subscriber,
+      ackDeadlineSeconds: 30,
+    });
 
     expect(topicMock.subscription).toHaveBeenCalledWith('sub', subscriber);
-    expect(subscription.create).toHaveBeenCalledWith({ ackDeadlineSeconds: 30 });
+    expect(subscription.create).toHaveBeenCalledWith({
+      ackDeadlineSeconds: 30,
+    });
   });
 
   it('keeps working without them', async () => {

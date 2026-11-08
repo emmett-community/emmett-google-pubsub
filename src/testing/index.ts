@@ -13,9 +13,15 @@ export { InMemoryPubSub } from './inMemoryPubSub';
  * to several calls to model several services or replicas on one project.
  */
 export function createInMemoryMessageBus(
-  config?: Partial<Omit<PubSubMessageBusConfig, 'pubsub'>> & { pubsub?: InMemoryPubSub },
+  config?: Partial<Omit<PubSubMessageBusConfig, 'pubsub'>> & {
+    pubsub?: InMemoryPubSub;
+  },
 ) {
-  const { pubsub = new InMemoryPubSub(), subscriptionOptions, ...rest } = config ?? {};
+  const {
+    pubsub = new InMemoryPubSub(),
+    subscriptionOptions,
+    ...rest
+  } = config ?? {};
 
   return getPubSubMessageBus({
     useEmulator: true,
@@ -24,6 +30,9 @@ export function createInMemoryMessageBus(
     topicPrefix: `test-${generateUUID()}`,
     ...rest,
     pubsub: pubsub as unknown as PubSub,
-    subscriptionOptions: { watchdog: { enabled: false }, ...subscriptionOptions },
+    subscriptionOptions: {
+      watchdog: { enabled: false },
+      ...subscriptionOptions,
+    },
   });
 }
