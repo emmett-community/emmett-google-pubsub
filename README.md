@@ -396,9 +396,12 @@ JavaScript `Date` objects are preserved through serialization:
 | Scenario | Behavior |
 |----------|----------|
 | Handler succeeds | Message acknowledged |
-| Transient error | Message nack'd, retried with backoff |
-| Permanent error | Message ack'd, logged |
-| No handler | Message nack'd for retry |
+| Handler throws an `EmmettError` | Message ack'd and logged: it is dropped and never retried |
+| Handler throws any other error | Message nack'd and redelivered, with backoff, until it succeeds or reaches the dead letter topic. The text of the error message never changes this |
+| No handler for an event | Message ack'd (events without handlers are ignored) |
+| No handler for a command | Message ack'd and logged as an error (`EmmettError`) |
+
+To discard a message on purpose, throw an `EmmettError` (or a subclass). A handler that must not lose a message on failure should let the original error propagate.
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) for design decisions.
 

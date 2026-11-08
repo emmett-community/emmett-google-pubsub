@@ -202,7 +202,7 @@ send<CommandType extends Command>(command: CommandType): Promise<void>
 **Behavior:**
 
 - Commands are processed by exactly one handler (1-to-1)
-- If no handler is registered, the message is nack'd for retry
+- If no handler is registered, an `EmmettError` is raised and the message is ack'd and logged
 - Can be called before `start()` (producer-only mode)
 
 **Example:**
@@ -545,9 +545,10 @@ try {
 | Scenario | Behavior |
 | --- | --- |
 | Handler succeeds | Message acknowledged |
-| Handler throws (transient) | Message nack'd, retried with backoff |
-| Handler throws (permanent) | Message ack'd, logged as error |
-| No handler registered | Message nack'd for retry |
+| Handler throws an `EmmettError` | Message ack'd, logged as error: dropped, never retried |
+| Handler throws any other error | Message nack'd, retried with backoff until it succeeds or reaches the dead letter topic. The error message text never changes this |
+| No handler registered for an event | Message ack'd (ignored) |
+| No handler registered for a command | Message ack'd, logged as error |
 
 ---
 

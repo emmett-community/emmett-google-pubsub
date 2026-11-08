@@ -347,8 +347,8 @@ The `useEmulator` flag determines:
     │    │    │
     ▼    │    ▼
 ┌───────┐│┌─────────────┐
-│ NACK  │││ Execute     │
-│(retry)│││ Handler     │
+│ ACK   │││ Execute     │
+│(+log) │││ Handler     │
 └───────┘│└──────┬──────┘
          │       │
          │  ┌────┴────┐
@@ -363,7 +363,7 @@ The `useEmulator` flag determines:
          │       │└──────┬──────┘
          │       │       │
          │       │ ┌─────┴─────┐
-         │       │ │Transient? │
+         │       │ │  Retry?   │
          │       │ └─────┬─────┘
          │       │  Yes  │  No
          │       │   │   │   │
@@ -378,9 +378,11 @@ The `useEmulator` flag determines:
 
 | Error Type | Action | Example |
 |------------|--------|---------|
-| **Transient** | NACK (retry) | Network timeout, rate limit |
-| **Permanent** | ACK + log | Invalid message, business error |
-| **No handler** | NACK (retry) | Handler not yet registered |
+| **Any error that is not an `EmmettError`** | NACK (retry, then the dead letter topic) | Network timeout, rate limit, an authentication failure, a bug |
+| **`EmmettError`** (and subclasses) | ACK + log | Business rule violation, no handler registered for a command |
+| **No handler for an event** | ACK | Events without handlers are ignored |
+
+Only the type of the error decides: the text of its message is never inspected. A handler that must not lose a message on failure lets the original error propagate; a handler that wants to discard a message throws an `EmmettError`.
 
 ### Retry Policy
 

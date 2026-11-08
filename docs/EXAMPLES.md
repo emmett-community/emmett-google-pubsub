@@ -301,19 +301,19 @@ messageBus.handle(
       await processCommand(command);
     } catch (error) {
       if (error instanceof ValidationError) {
-        // Permanent error - don't retry
+        // Permanent error - don't retry. Only an EmmettError (or a subclass)
+        // is acknowledged and dropped, so ValidationError must extend it
         console.error('Validation failed:', error.message);
-        // Message will be ack'd (not retried)
         throw error;
       }
 
       if (error instanceof NetworkError) {
-        // Transient error - will retry
+        // Any other error is nack'd and retried, then dead-lettered
         console.warn('Network error, will retry:', error.message);
         throw error;
       }
 
-      // Unknown error
+      // Unknown error: nack'd and retried too
       throw error;
     }
   },
