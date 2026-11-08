@@ -136,7 +136,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         await scheduler.schedule(message, { afterInMs: 5000 });
 
         expect(scheduler.getPendingCount()).toBe(1);
@@ -180,7 +183,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         await scheduler.schedule(message, { afterInMs: 1000 });
 
         expect(scheduler.getPendingCount()).toBe(1);
@@ -202,7 +208,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         const targetDate = new Date('2024-01-15T10:05:00.000Z');
         await scheduler.schedule(message, { at: targetDate });
 
@@ -227,7 +236,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         await scheduler.schedule(message, { afterInMs: 5000 });
 
         expect(scheduler.getPendingCount()).toBe(1);
@@ -266,7 +278,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         await scheduler.schedule(message, { afterInMs: 5000 });
 
         expect(mockPubSub.topic).toHaveBeenCalledWith(
@@ -276,7 +291,11 @@ describe('Scheduler', () => {
         expect(mockCreate).toHaveBeenCalled();
         expect(mockPublishMessage).toHaveBeenCalled();
 
-        const publishCall = mockPublishMessage.mock.calls[0][0];
+        const publishCall = (
+          mockPublishMessage.mock.calls as [
+            { attributes: Record<string, string> },
+          ][]
+        )[0][0];
         expect(publishCall.attributes.messageType).toBe('TestCommand');
         expect(publishCall.attributes.publishTime).toBe(
           '2024-01-15T10:00:05.000Z',
@@ -300,7 +319,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         await scheduler.schedule(message, { afterInMs: 5000 });
 
         expect(mockExists).toHaveBeenCalled();
@@ -325,7 +347,10 @@ describe('Scheduler', () => {
           pubsub: mockPubSub,
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
 
         await expect(
           scheduler.schedule(message, { afterInMs: 5000 }),
@@ -373,10 +398,15 @@ describe('Scheduler', () => {
           topicPrefix: 'custom',
         });
 
-        const message: Message = { type: 'TestCommand', data: { value: 'test' } };
+        const message: Message = {
+          type: 'TestCommand',
+          data: { value: 'test' },
+        };
         await scheduler.schedule(message, { afterInMs: 5000 });
 
-        expect(mockPubSub.topic).toHaveBeenCalledWith('custom-scheduled-messages');
+        expect(mockPubSub.topic).toHaveBeenCalledWith(
+          'custom-scheduled-messages',
+        );
       });
     });
   });

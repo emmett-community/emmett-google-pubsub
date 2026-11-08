@@ -1,10 +1,7 @@
 import type { Command } from '@event-driven-io/emmett';
 import { EmmettError } from '@event-driven-io/emmett';
-import {
-  getTestMessageBus,
-  createTestCommand,
-  waitFor,
-} from './helpers';
+import { dataOf } from '../support/accessors';
+import { getTestMessageBus, createTestCommand, waitFor } from './helpers';
 
 describe('Commands Integration Tests', () => {
   describe('command registration and handling', () => {
@@ -13,12 +10,11 @@ describe('Commands Integration Tests', () => {
       const receivedCommands: Command[] = [];
 
       // Register handler
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       // Start message bus
       await messageBus.start();
@@ -45,12 +41,8 @@ describe('Commands Integration Tests', () => {
     it('should reject duplicate command handler registration', () => {
       const messageBus = getTestMessageBus();
 
-      const handler1 = async (command: Command) => {
-        console.log('Handler 1', command);
-      };
-      const handler2 = async (command: Command) => {
-        console.log('Handler 2', command);
-      };
+      const handler1 = () => Promise.resolve(undefined);
+      const handler2 = () => Promise.resolve(undefined);
 
       messageBus.handle(handler1, 'TestCommand');
 
@@ -68,19 +60,17 @@ describe('Commands Integration Tests', () => {
       const receivedCommand1: Command[] = [];
       const receivedCommand2: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommand1.push(command);
-        },
-        'Command1',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommand1.push(command);
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommand2.push(command);
-        },
-        'Command2',
-      );
+        return Promise.resolve();
+      }, 'Command1');
+
+      messageBus.handle((command: Command) => {
+        receivedCommand2.push(command);
+
+        return Promise.resolve();
+      }, 'Command2');
 
       await messageBus.start();
 
@@ -88,7 +78,9 @@ describe('Commands Integration Tests', () => {
         await messageBus.send({ type: 'Command1', data: { value: 'cmd1' } });
         await messageBus.send({ type: 'Command2', data: { value: 'cmd2' } });
 
-        await waitFor(() => receivedCommand1.length > 0 && receivedCommand2.length > 0);
+        await waitFor(
+          () => receivedCommand1.length > 0 && receivedCommand2.length > 0,
+        );
 
         expect(receivedCommand1).toHaveLength(1);
         expect(receivedCommand1[0].type).toBe('Command1');
@@ -103,12 +95,11 @@ describe('Commands Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -139,14 +130,11 @@ describe('Commands Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const executionOrder: string[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          executionOrder.push((command.data as any).id);
-          // Simulate some processing time
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        },
-        'TestCommand',
-      );
+      messageBus.handle(async (command: Command) => {
+        executionOrder.push(dataOf(command).id);
+        // Simulate some processing time
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -168,12 +156,11 @@ describe('Commands Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -194,11 +181,12 @@ describe('Commands Integration Tests', () => {
 
         await waitFor(() => receivedCommands.length > 0);
 
-        const data = receivedCommands[0].data as any;
+        const data = dataOf<{
+          createdAt: Date;
+          nested: { updatedAt: Date };
+        }>(receivedCommands[0]);
         expect(data.createdAt).toBeInstanceOf(Date);
-        expect(data.createdAt.toISOString()).toBe(
-          '2024-01-15T10:30:00.000Z',
-        );
+        expect(data.createdAt.toISOString()).toBe('2024-01-15T10:30:00.000Z');
         expect(data.nested.updatedAt).toBeInstanceOf(Date);
       } finally {
         await messageBus.close();
@@ -213,12 +201,11 @@ describe('Commands Integration Tests', () => {
 
       try {
         // Register handler after start
-        messageBus.handle(
-          async (command: Command) => {
-            receivedCommands.push(command);
-          },
-          'TestCommand',
-        );
+        messageBus.handle((command: Command) => {
+          receivedCommands.push(command);
+
+          return Promise.resolve();
+        }, 'TestCommand');
 
         // Give time for subscription to be created
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -239,14 +226,13 @@ describe('Commands Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const attempts: string[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          attempts.push((command.data as any).id);
-          // Throw a non-retriable error (EmmettError)
-          throw new EmmettError('Business logic error');
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        attempts.push(dataOf(command).id);
+        // Throw a non-retriable error (EmmettError)
+        throw new EmmettError('Business logic error');
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -282,12 +268,11 @@ describe('Commands Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
       await messageBus.start(); // Should not throw
@@ -307,12 +292,7 @@ describe('Commands Integration Tests', () => {
     it('should gracefully close and cleanup subscriptions', async () => {
       const messageBus = getTestMessageBus();
 
-      messageBus.handle(
-        async (command: Command) => {
-          console.log('Handler', command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle(() => Promise.resolve(undefined), 'TestCommand');
 
       await messageBus.start();
       expect(messageBus.isStarted()).toBe(true);

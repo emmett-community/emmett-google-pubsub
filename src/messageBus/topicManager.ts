@@ -11,7 +11,11 @@ const DEFAULT_SETUP_TIMEOUT_MS = 10000;
  * rejecting - without this, resource setup during `start()` could block
  * the entire message bus (and anything awaiting it) forever.
  */
-const withSetupTimeout = <T>(promise: Promise<T>, operation: string, timeoutMs: number): Promise<T> => {
+const withSetupTimeout = <T>(
+  promise: Promise<T>,
+  operation: string,
+  timeoutMs: number,
+): Promise<T> => {
   let timeoutHandle: NodeJS.Timeout | undefined;
   return Promise.race([
     promise,
@@ -38,7 +42,10 @@ export function getCommandTopicName(
 /**
  * Get event topic name
  */
-export function getEventTopicName(eventType: string, prefix = 'emmett'): string {
+export function getEventTopicName(
+  eventType: string,
+  prefix = 'emmett',
+): string {
   return `${prefix}-evt-${eventType}`;
 }
 
@@ -80,14 +87,22 @@ export async function getOrCreateTopic(
   const topic = pubsub.topic(topicName);
 
   try {
-    const [exists] = await withSetupTimeout(topic.exists(), `Checking topic ${topicName} exists`, timeoutMs);
+    const [exists] = await withSetupTimeout(
+      topic.exists(),
+      `Checking topic ${topicName} exists`,
+      timeoutMs,
+    );
 
     if (!exists) {
       try {
-        await withSetupTimeout(topic.create(), `Creating topic ${topicName}`, timeoutMs);
-      } catch (createError: any) {
+        await withSetupTimeout(
+          topic.create(),
+          `Creating topic ${topicName}`,
+          timeoutMs,
+        );
+      } catch (createError) {
         // Ignore ALREADY_EXISTS errors (race condition)
-        if (createError.code !== 6) {
+        if ((createError as { code?: number }).code !== 6) {
           throw createError;
         }
       }
@@ -137,7 +152,8 @@ export async function getOrCreateSubscription(
       if (deadLetterTopic && pubsub) {
         // Accept both a plain topic name and a fully qualified one (projects/<p>/topics/<t>)
         const shortName = deadLetterTopic.split('/').pop() as string;
-        deadLetterTopic = (await getOrCreateTopic(pubsub, shortName, timeoutMs)).name;
+        deadLetterTopic = (await getOrCreateTopic(pubsub, shortName, timeoutMs))
+          .name;
       }
 
       const config = {
@@ -170,9 +186,9 @@ export async function getOrCreateSubscription(
           `Creating subscription ${subscriptionName}`,
           timeoutMs,
         );
-      } catch (createError: any) {
+      } catch (createError) {
         // Ignore ALREADY_EXISTS errors (race condition)
-        if (createError.code !== 6) {
+        if ((createError as { code?: number }).code !== 6) {
           throw createError;
         }
       }
@@ -218,5 +234,7 @@ export async function deleteSubscriptions(
   subscriptions: Subscription[],
   logger?: Logger,
 ): Promise<void> {
-  await Promise.all(subscriptions.map((sub) => deleteSubscription(sub, logger)));
+  await Promise.all(
+    subscriptions.map((sub) => deleteSubscription(sub, logger)),
+  );
 }

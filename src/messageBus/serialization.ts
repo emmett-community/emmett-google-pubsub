@@ -79,12 +79,18 @@ function getMessageKind(message: Message): 'command' | 'event' {
  *   already has (for example the event store's) so it stays stable across publications.
  * @returns Buffer containing the serialized message envelope
  */
-export function serialize(message: Command | Event, messageId: string = randomUUID()): Buffer {
+export function serialize(
+  message: Command | Event,
+  messageId: string = randomUUID(),
+): Buffer {
   const envelope = {
     type: message.type,
     kind: getMessageKind(message),
     data: transformDatesToMarkers(message.data),
-    metadata: 'metadata' in message ? transformDatesToMarkers(message.metadata) : undefined,
+    metadata:
+      'metadata' in message
+        ? transformDatesToMarkers(message.metadata)
+        : undefined,
     timestamp: new Date().toISOString(),
     messageId,
   };
@@ -138,22 +144,30 @@ export function deserializeWithMetadata<T extends Command | Event>(
   attributes?: Record<string, string> | null,
 ): T {
   const message = deserialize<T>(buffer);
-  const envelope = JSON.parse(buffer.toString('utf-8'), dateReviver) as PubSubMessageEnvelope;
+  const envelope = JSON.parse(
+    buffer.toString('utf-8'),
+    dateReviver,
+  ) as PubSubMessageEnvelope;
 
-  const published = ('metadata' in message ? message.metadata : {}) as Record<string, unknown>;
+  const published = ('metadata' in message ? message.metadata : {}) as Record<
+    string,
+    unknown
+  >;
   // The messageId in the published metadata is the event's own (set by the event store) and is
   // the deduplication key; the envelope one only fills in when the event has none
   const metadata: Record<string, unknown> = {
     ...(envelope.messageId !== undefined && { messageId: envelope.messageId }),
     ...published,
     ...(published.schemaVersion === undefined &&
-      attributes?.schemaVersion !== undefined && { schemaVersion: attributes.schemaVersion }),
-    ...(attributes?.traceparent !== undefined && { traceparent: attributes.traceparent }),
+      attributes?.schemaVersion !== undefined && {
+        schemaVersion: attributes.schemaVersion,
+      }),
+    ...(attributes?.traceparent !== undefined && {
+      traceparent: attributes.traceparent,
+    }),
   };
 
-  return (
-    Object.keys(metadata).length > 0 ? { ...message, metadata } : message
-  ) as T;
+  return Object.keys(metadata).length > 0 ? { ...message, metadata } : message;
 }
 
 /**

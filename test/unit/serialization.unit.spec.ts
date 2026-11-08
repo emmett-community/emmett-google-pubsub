@@ -221,12 +221,12 @@ describe('Serialization', () => {
       expect(deserialized.data.items[0].addedAt.toISOString()).toBe(
         date1.toISOString(),
       );
-      expect(
-        deserialized.data.items[0].metadata.modifiedAt,
-      ).toBeInstanceOf(Date);
-      expect(
-        deserialized.data.items[0].metadata.modifiedAt.toISOString(),
-      ).toBe(date2.toISOString());
+      expect(deserialized.data.items[0].metadata.modifiedAt).toBeInstanceOf(
+        Date,
+      );
+      expect(deserialized.data.items[0].metadata.modifiedAt.toISOString()).toBe(
+        date2.toISOString(),
+      );
     });
 
     it('should throw error on invalid buffer', () => {

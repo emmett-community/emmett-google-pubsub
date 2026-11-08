@@ -1,4 +1,7 @@
-import type { Message as PubSubMessage, Subscription } from '@google-cloud/pubsub';
+import type {
+  Message as PubSubMessage,
+  Subscription,
+} from '@google-cloud/pubsub';
 import type {
   AnyMessage,
   Command,
@@ -54,20 +57,17 @@ describe('MessageHandler', () => {
       expect(shouldRetry(error)).toBe(false);
     });
 
-    it('should return false for validation errors', () => {
-      const error = new Error('Validation failed');
-      expect(shouldRetry(error)).toBe(false);
-    });
-
-    it('should return false for invalid errors', () => {
-      const error = new Error('Invalid input');
-      expect(shouldRetry(error)).toBe(false);
-    });
-
-    it('should return false for not found errors', () => {
-      const error = new Error('Resource not found');
-      expect(shouldRetry(error)).toBe(false);
-    });
+    it.each([
+      'Validation failed',
+      'Invalid credential',
+      'Resource not found',
+      'Document already exists',
+    ])(
+      'should return true for a plain Error whose message says "%s"',
+      (message) => {
+        expect(shouldRetry(new Error(message))).toBe(true);
+      },
+    );
 
     it('should return true for unknown error types', () => {
       const error = 'Unknown error';
@@ -322,6 +322,26 @@ describe('MessageHandler', () => {
       expect(logger.info).toHaveBeenCalled();
     });
 
+    it('should return nack when handler throws a plain Error whose message says invalid', async () => {
+      const handler = jest
+        .fn()
+        .mockRejectedValue(new Error('Invalid credential'));
+      const handlers = new Map<
+        string,
+        SingleRawMessageHandlerWithoutContext<AnyMessage>[]
+      >([['TestEvent', [handler]]]);
+
+      const event: Event = {
+        type: 'TestEvent',
+        data: { value: 'test' },
+      };
+      const message = createMockMessage(event);
+
+      const result = await handleEventMessage(message, handlers, 'TestEvent');
+
+      expect(result).toBe('nack');
+    });
+
     it('should continue processing when handler throws non-retriable error', async () => {
       const logger = createMockLogger();
 
@@ -356,11 +376,15 @@ describe('MessageHandler', () => {
 
     it('should execute handlers sequentially', async () => {
       const executionOrder: number[] = [];
-      const handler1 = jest.fn().mockImplementation(async () => {
+      const handler1 = jest.fn().mockImplementation(() => {
         executionOrder.push(1);
+
+        return Promise.resolve();
       });
-      const handler2 = jest.fn().mockImplementation(async () => {
+      const handler2 = jest.fn().mockImplementation(() => {
         executionOrder.push(2);
+
+        return Promise.resolve();
       });
       const handlers = new Map<
         string,
@@ -454,8 +478,11 @@ describe('MessageHandler', () => {
         nack: mockNack,
       } as unknown as PubSubMessage;
 
-      const messageHandler = mockOn.mock.calls[0][1];
-      await messageHandler(mockMessage);
+      const messageHandler = (
+        mockOn.mock.calls as [string, (message: PubSubMessage) => void][]
+      )[0][1];
+      messageHandler(mockMessage);
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(mockAck).toHaveBeenCalled();
       expect(mockNack).not.toHaveBeenCalled();
@@ -494,8 +521,11 @@ describe('MessageHandler', () => {
         nack: mockNack,
       } as unknown as PubSubMessage;
 
-      const messageHandler = mockOn.mock.calls[0][1];
-      await messageHandler(mockMessage);
+      const messageHandler = (
+        mockOn.mock.calls as [string, (message: PubSubMessage) => void][]
+      )[0][1];
+      messageHandler(mockMessage);
+      await new Promise((resolve) => setImmediate(resolve));
 
       expect(mockNack).toHaveBeenCalled();
       expect(mockAck).not.toHaveBeenCalled();

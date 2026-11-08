@@ -1,5 +1,14 @@
-import type { PubSub, SubscriberOptions, Subscription, Topic } from '@google-cloud/pubsub';
-import type { Event, Message, SingleMessageHandler } from '@event-driven-io/emmett';
+import type {
+  PubSub,
+  SubscriberOptions,
+  Subscription,
+  Topic,
+} from '@google-cloud/pubsub';
+import type {
+  Event,
+  Message,
+  SingleMessageHandler,
+} from '@event-driven-io/emmett';
 
 /**
  * Canonical Logger contract for the Emmett ecosystem.

@@ -69,9 +69,9 @@ describe('TopicManager', () => {
 
     describe('getEventSubscriptionName', () => {
       it('should generate event subscription name with default prefix', () => {
-        expect(
-          getEventSubscriptionName('ProductItemAdded', 'sub-456'),
-        ).toBe('emmett-evt-ProductItemAdded-sub-456');
+        expect(getEventSubscriptionName('ProductItemAdded', 'sub-456')).toBe(
+          'emmett-evt-ProductItemAdded-sub-456',
+        );
       });
 
       it('should generate event subscription name with custom prefix', () => {
@@ -154,7 +154,9 @@ describe('TopicManager', () => {
           'test-subscription',
         );
 
-        expect(mockTopic.subscription).toHaveBeenCalledWith('test-subscription');
+        expect(mockTopic.subscription).toHaveBeenCalledWith(
+          'test-subscription',
+        );
         expect(mockSubscription.exists).toHaveBeenCalled();
         expect(mockSubscription.create).not.toHaveBeenCalled();
         expect(subscription).toBe(mockSubscription);
@@ -165,7 +167,9 @@ describe('TopicManager', () => {
           exists: jest.fn().mockResolvedValue([false]),
           create: jest.fn(),
         };
-        (mockSubscription.create as jest.Mock).mockResolvedValue([mockSubscription]);
+        (mockSubscription.create as jest.Mock).mockResolvedValue([
+          mockSubscription,
+        ]);
 
         const mockTopic = {
           subscription: jest.fn().mockReturnValue(mockSubscription),
@@ -176,7 +180,9 @@ describe('TopicManager', () => {
           'test-subscription',
         );
 
-        expect(mockTopic.subscription).toHaveBeenCalledWith('test-subscription');
+        expect(mockTopic.subscription).toHaveBeenCalledWith(
+          'test-subscription',
+        );
         expect(mockSubscription.exists).toHaveBeenCalled();
         expect(mockSubscription.create).toHaveBeenCalledWith({});
         expect(subscription).toBe(mockSubscription);
@@ -187,7 +193,9 @@ describe('TopicManager', () => {
           exists: jest.fn().mockResolvedValue([false]),
           create: jest.fn(),
         };
-        (mockSubscription.create as jest.Mock).mockResolvedValue([mockSubscription]);
+        (mockSubscription.create as jest.Mock).mockResolvedValue([
+          mockSubscription,
+        ]);
 
         const mockTopic = {
           subscription: jest.fn().mockReturnValue(mockSubscription),

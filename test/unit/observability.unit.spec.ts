@@ -75,7 +75,10 @@ describe('Observability', () => {
 
       safeLog.error(logger, 'error message', testError);
 
-      expect(errorMock).toHaveBeenCalledWith({ err: testError }, 'error message');
+      expect(errorMock).toHaveBeenCalledWith(
+        { err: testError },
+        'error message',
+      );
     });
 
     it('should handle undefined data parameter with empty object', () => {
@@ -103,7 +106,10 @@ describe('Observability', () => {
 
       safeLog.debug(logger, 'primitive data', 'string value');
 
-      expect(debugMock).toHaveBeenCalledWith({ data: 'string value' }, 'primitive data');
+      expect(debugMock).toHaveBeenCalledWith(
+        { data: 'string value' },
+        'primitive data',
+      );
     });
 
     it('should wrap array data in { data: value }', () => {
@@ -159,11 +165,17 @@ describe('Observability', () => {
 
       // Object error
       safeLog.error(logger, 'object error', { code: 'ERR_001' });
-      expect(errorMock).toHaveBeenCalledWith({ err: { code: 'ERR_001' } }, 'object error');
+      expect(errorMock).toHaveBeenCalledWith(
+        { err: { code: 'ERR_001' } },
+        'object error',
+      );
 
       // String error
       safeLog.error(logger, 'string error', 'some error');
-      expect(errorMock).toHaveBeenCalledWith({ err: 'some error' }, 'string error');
+      expect(errorMock).toHaveBeenCalledWith(
+        { err: 'some error' },
+        'string error',
+      );
     });
   });
 });

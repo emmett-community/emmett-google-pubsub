@@ -1,9 +1,6 @@
 import type { Event } from '@event-driven-io/emmett';
-import {
-  getTestMessageBus,
-  createTestEvent,
-  waitFor,
-} from './helpers';
+import { dataOf, metadataOf } from '../support/accessors';
+import { getTestMessageBus, createTestEvent, waitFor } from './helpers';
 
 describe('Events Integration Tests', () => {
   describe('event subscription and publishing', () => {
@@ -11,12 +8,11 @@ describe('Events Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedEvents: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          receivedEvents.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        receivedEvents.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
 
       await messageBus.start();
 
@@ -31,7 +27,7 @@ describe('Events Integration Tests', () => {
         expect(receivedEvents[0].data).toEqual({
           id: 'evt-1',
           value: 'test-value',
-          timestamp: expect.any(Date),
+          timestamp: expect.any(Date) as Date,
         });
       } finally {
         await messageBus.close();
@@ -44,26 +40,23 @@ describe('Events Integration Tests', () => {
       const subscriber2Events: Event[] = [];
       const subscriber3Events: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber1Events.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        subscriber1Events.push(event);
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber2Events.push(event);
-        },
-        'TestEvent',
-      );
+        return Promise.resolve();
+      }, 'TestEvent');
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber3Events.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        subscriber2Events.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
+
+      messageBus.subscribe((event: Event) => {
+        subscriber3Events.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
 
       await messageBus.start();
 
@@ -83,9 +76,9 @@ describe('Events Integration Tests', () => {
         expect(subscriber3Events).toHaveLength(1);
 
         // All should receive the same event
-        expect((subscriber1Events[0].data as any).id).toBe('evt-1');
-        expect((subscriber2Events[0].data as any).id).toBe('evt-1');
-        expect((subscriber3Events[0].data as any).id).toBe('evt-1');
+        expect(dataOf(subscriber1Events[0]).id).toBe('evt-1');
+        expect(dataOf(subscriber2Events[0]).id).toBe('evt-1');
+        expect(dataOf(subscriber3Events[0]).id).toBe('evt-1');
       } finally {
         await messageBus.close();
       }
@@ -96,19 +89,17 @@ describe('Events Integration Tests', () => {
       const event1Received: Event[] = [];
       const event2Received: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          event1Received.push(event);
-        },
-        'Event1',
-      );
+      messageBus.subscribe((event: Event) => {
+        event1Received.push(event);
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          event2Received.push(event);
-        },
-        'Event2',
-      );
+        return Promise.resolve();
+      }, 'Event1');
+
+      messageBus.subscribe((event: Event) => {
+        event2Received.push(event);
+
+        return Promise.resolve();
+      }, 'Event2');
 
       await messageBus.start();
 
@@ -116,7 +107,9 @@ describe('Events Integration Tests', () => {
         await messageBus.publish({ type: 'Event1', data: { value: 'evt1' } });
         await messageBus.publish({ type: 'Event2', data: { value: 'evt2' } });
 
-        await waitFor(() => event1Received.length > 0 && event2Received.length > 0);
+        await waitFor(
+          () => event1Received.length > 0 && event2Received.length > 0,
+        );
 
         expect(event1Received).toHaveLength(1);
         expect(event1Received[0].type).toBe('Event1');
@@ -131,12 +124,11 @@ describe('Events Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedEvents: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          receivedEvents.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        receivedEvents.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
 
       await messageBus.start();
 
@@ -153,7 +145,7 @@ describe('Events Integration Tests', () => {
 
         await waitFor(() => receivedEvents.length > 0);
 
-        const receivedMetadata = (receivedEvents[0] as any).metadata;
+        const receivedMetadata = metadataOf(receivedEvents[0]);
         expect(receivedMetadata).toBeDefined();
         expect(receivedMetadata?.now).toBeInstanceOf(Date);
         expect((receivedMetadata?.now as Date).toISOString()).toBe(
@@ -168,12 +160,11 @@ describe('Events Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedEvents: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          receivedEvents.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        receivedEvents.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
 
       await messageBus.start();
 
@@ -195,11 +186,12 @@ describe('Events Integration Tests', () => {
 
         await waitFor(() => receivedEvents.length > 0);
 
-        const data = receivedEvents[0].data as any;
+        const data = dataOf<{
+          occurredAt: Date;
+          items: { addedAt: Date }[];
+        }>(receivedEvents[0]);
         expect(data.occurredAt).toBeInstanceOf(Date);
-        expect(data.occurredAt.toISOString()).toBe(
-          '2024-01-15T10:30:00.000Z',
-        );
+        expect(data.occurredAt.toISOString()).toBe('2024-01-15T10:30:00.000Z');
         expect(data.items[0].addedAt).toBeInstanceOf(Date);
         expect(data.items[1].addedAt).toBeInstanceOf(Date);
       } finally {
@@ -211,15 +203,12 @@ describe('Events Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const executionOrder: string[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          const id = (event.data as any).id;
-          executionOrder.push(`start-${id}`);
-          await new Promise((resolve) => setTimeout(resolve, 50));
-          executionOrder.push(`end-${id}`);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe(async (event: Event) => {
+        const id = dataOf(event).id;
+        executionOrder.push(`start-${id}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        executionOrder.push(`end-${id}`);
+      }, 'TestEvent');
 
       await messageBus.start();
 
@@ -231,8 +220,12 @@ describe('Events Integration Tests', () => {
 
         // Both events should be processed (order may vary due to async nature)
         expect(executionOrder).toHaveLength(4);
-        expect(executionOrder.filter((e) => e.includes('evt-1'))).toHaveLength(2);
-        expect(executionOrder.filter((e) => e.includes('evt-2'))).toHaveLength(2);
+        expect(executionOrder.filter((e) => e.includes('evt-1'))).toHaveLength(
+          2,
+        );
+        expect(executionOrder.filter((e) => e.includes('evt-2'))).toHaveLength(
+          2,
+        );
         expect(executionOrder).toContain('start-evt-1');
         expect(executionOrder).toContain('end-evt-1');
         expect(executionOrder).toContain('start-evt-2');
@@ -250,12 +243,11 @@ describe('Events Integration Tests', () => {
 
       try {
         // Subscribe after start
-        messageBus.subscribe(
-          async (event: Event) => {
-            receivedEvents.push(event);
-          },
-          'TestEvent',
-        );
+        messageBus.subscribe((event: Event) => {
+          receivedEvents.push(event);
+
+          return Promise.resolve();
+        }, 'TestEvent');
 
         // Give time for subscription to be created
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -292,20 +284,18 @@ describe('Events Integration Tests', () => {
       const subscriber1Events: Event[] = [];
       const subscriber2Events: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber1Events.push(event);
-          throw new Error('Subscriber 1 failed');
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        subscriber1Events.push(event);
+        throw new Error('Subscriber 1 failed');
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber2Events.push(event);
-        },
-        'TestEvent',
-      );
+        return Promise.resolve();
+      }, 'TestEvent');
+
+      messageBus.subscribe((event: Event) => {
+        subscriber2Events.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
 
       await messageBus.start();
 
@@ -332,8 +322,10 @@ describe('Events Integration Tests', () => {
       const receivedEvents: Event[] = [];
 
       messageBus.subscribe(
-        async (event: Event) => {
+        (event: Event) => {
           receivedEvents.push(event);
+
+          return Promise.resolve();
         },
         'Event1',
         'Event2',

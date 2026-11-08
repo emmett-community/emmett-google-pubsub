@@ -15,9 +15,7 @@ export function getTestPubSub(): PubSub {
 /**
  * Create a test message bus with emulator configuration
  */
-export function getTestMessageBus(
-  config?: Partial<PubSubMessageBusConfig>,
-) {
+export function getTestMessageBus(config?: Partial<PubSubMessageBusConfig>) {
   const pubsub = getTestPubSub();
 
   return getPubSubMessageBus({

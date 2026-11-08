@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-11-08
+
+### Changed
+
+- A handler failure is acknowledged (dropped) only when the error is an `EmmettError`, and the message text no longer decides anything. Any other error is retried, whatever its message says. Before, a plain `Error` whose message contained "validation", "invalid", "not found" or "already exists" was acknowledged, so a failure such as an authentication error about an invalid credential was lost without reaching the dead letter topic. Handlers that relied on throwing a plain `Error` with one of those texts to discard a message must throw an `EmmettError` instead. In the other direction, an `EmmettError` whose message contained "network", "timeout", "econnrefused", "enotfound" or "unavailable" was retried; it is now acknowledged like any other `EmmettError`.
+- ESLint 9 with a flat config (`eslint.config.mjs`) replaces the unused `.eslintrc.json`. `npm run lint` and `npm run format:check` pass and run in the build and test workflow, and the sources and tests were reformatted with Prettier.
+
 ## [0.6.0] - 2026-11-04
 
 ### Added
@@ -24,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- `schedule` and `dequeue`: in emulator mode they keep messages in memory, and against real Pub/Sub `schedule` publishes at once to a `<topicPrefix>-scheduled-messages` topic that nothing consumes, because Pub/Sub has no delayed delivery. Messages are never delivered at the requested time. Use Cloud Scheduler and Cloud Tasks, as `scheduled-jobs.md` and ADR-006 define.
+- `schedule` and `dequeue`: in emulator mode they keep messages in memory, and against real Pub/Sub `schedule` publishes at once to a `<topicPrefix>-scheduled-messages` topic that nothing consumes, because Pub/Sub has no delayed delivery. Messages are never delivered at the requested time. Use a scheduling service such as Cloud Scheduler or Cloud Tasks instead.
 
 ## [0.5.0] - 2026-09-27
 

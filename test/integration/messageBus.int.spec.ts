@@ -1,4 +1,5 @@
 import type { Command, Event, Message } from '@event-driven-io/emmett';
+import { dataOf } from '../support/accessors';
 import {
   getTestMessageBus,
   createTestCommand,
@@ -13,24 +14,20 @@ describe('MessageBus Integration Tests', () => {
       const receivedCommands: Command[] = [];
       const receivedEvents: Event[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-          // Publish an event when command is handled
-          await messageBus.publish({
-            type: 'CommandProcessed',
-            data: { commandId: (command.data as any).id },
-          });
-        },
-        'TestCommand',
-      );
+      messageBus.handle(async (command: Command) => {
+        receivedCommands.push(command);
+        // Publish an event when command is handled
+        await messageBus.publish({
+          type: 'CommandProcessed',
+          data: { commandId: dataOf(command).id },
+        });
+      }, 'TestCommand');
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          receivedEvents.push(event);
-        },
-        'CommandProcessed',
-      );
+      messageBus.subscribe((event: Event) => {
+        receivedEvents.push(event);
+
+        return Promise.resolve();
+      }, 'CommandProcessed');
 
       await messageBus.start();
 
@@ -47,7 +44,7 @@ describe('MessageBus Integration Tests', () => {
 
         expect(receivedCommands).toHaveLength(1);
         expect(receivedEvents).toHaveLength(1);
-        expect((receivedEvents[0].data as any).commandId).toBe('cmd-1');
+        expect(dataOf(receivedEvents[0]).commandId).toBe('cmd-1');
       } finally {
         await messageBus.close();
       }
@@ -57,26 +54,23 @@ describe('MessageBus Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedMessages: Message[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedMessages.push(command);
-        },
-        'Command1',
-      );
+      messageBus.handle((command: Command) => {
+        receivedMessages.push(command);
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedMessages.push(command);
-        },
-        'Command2',
-      );
+        return Promise.resolve();
+      }, 'Command1');
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          receivedMessages.push(event);
-        },
-        'Event1',
-      );
+      messageBus.handle((command: Command) => {
+        receivedMessages.push(command);
+
+        return Promise.resolve();
+      }, 'Command2');
+
+      messageBus.subscribe((event: Event) => {
+        receivedMessages.push(event);
+
+        return Promise.resolve();
+      }, 'Event1');
 
       await messageBus.start();
 
@@ -104,48 +98,38 @@ describe('MessageBus Integration Tests', () => {
       const workflow: string[] = [];
 
       // Step 1: Handle CreateOrder command
-      messageBus.handle(
-        async (command: Command) => {
-          workflow.push('CreateOrder-received');
-          await messageBus.publish({
-            type: 'OrderCreated',
-            data: { orderId: (command.data as any).orderId },
-          });
-        },
-        'CreateOrder',
-      );
+      messageBus.handle(async (command: Command) => {
+        workflow.push('CreateOrder-received');
+        await messageBus.publish({
+          type: 'OrderCreated',
+          data: { orderId: dataOf(command).orderId },
+        });
+      }, 'CreateOrder');
 
       // Step 2: React to OrderCreated event
-      messageBus.subscribe(
-        async (event: Event) => {
-          workflow.push('OrderCreated-received');
-          await messageBus.publish({
-            type: 'PaymentRequested',
-            data: { orderId: (event.data as any).orderId },
-          });
-        },
-        'OrderCreated',
-      );
+      messageBus.subscribe(async (event: Event) => {
+        workflow.push('OrderCreated-received');
+        await messageBus.publish({
+          type: 'PaymentRequested',
+          data: { orderId: dataOf(event).orderId },
+        });
+      }, 'OrderCreated');
 
       // Step 3: React to PaymentRequested event
-      messageBus.subscribe(
-        async (event: Event) => {
-          workflow.push('PaymentRequested-received');
-          await messageBus.publish({
-            type: 'PaymentCompleted',
-            data: { orderId: (event.data as any).orderId },
-          });
-        },
-        'PaymentRequested',
-      );
+      messageBus.subscribe(async (event: Event) => {
+        workflow.push('PaymentRequested-received');
+        await messageBus.publish({
+          type: 'PaymentCompleted',
+          data: { orderId: dataOf(event).orderId },
+        });
+      }, 'PaymentRequested');
 
       // Step 4: React to PaymentCompleted event
-      messageBus.subscribe(
-        async (_event: Event) => {
-          workflow.push('PaymentCompleted-received');
-        },
-        'PaymentCompleted',
-      );
+      messageBus.subscribe((_event: Event) => {
+        workflow.push('PaymentCompleted-received');
+
+        return Promise.resolve();
+      }, 'PaymentCompleted');
 
       await messageBus.start();
 
@@ -182,19 +166,17 @@ describe('MessageBus Integration Tests', () => {
       const bus1Received: Command[] = [];
       const bus2Received: Command[] = [];
 
-      bus1.handle(
-        async (command: Command) => {
-          bus1Received.push(command);
-        },
-        'TestCommand',
-      );
+      bus1.handle((command: Command) => {
+        bus1Received.push(command);
 
-      bus2.handle(
-        async (command: Command) => {
-          bus2Received.push(command);
-        },
-        'TestCommand',
-      );
+        return Promise.resolve();
+      }, 'TestCommand');
+
+      bus2.handle((command: Command) => {
+        bus2Received.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await bus1.start();
       await bus2.start();
@@ -207,9 +189,9 @@ describe('MessageBus Integration Tests', () => {
         await waitFor(() => bus1Received.length > 0 || bus2Received.length > 0);
 
         // One of the instances should receive it (load balancing)
-        expect(bus1Received.length + bus2Received.length).toBeGreaterThanOrEqual(
-          1,
-        );
+        expect(
+          bus1Received.length + bus2Received.length,
+        ).toBeGreaterThanOrEqual(1);
       } finally {
         await bus1.close();
         await bus2.close();
@@ -220,12 +202,11 @@ describe('MessageBus Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       // Start, send, close
       await messageBus.start();
@@ -242,7 +223,7 @@ describe('MessageBus Integration Tests', () => {
       await waitFor(() => receivedCommands.length > 0);
 
       expect(receivedCommands).toHaveLength(1);
-      expect((receivedCommands[0].data as any).id).toBe('cmd-2');
+      expect(dataOf(receivedCommands[0]).id).toBe('cmd-2');
 
       await messageBus.close();
     });
@@ -252,14 +233,11 @@ describe('MessageBus Integration Tests', () => {
       const startedProcessing: string[] = [];
       const completedProcessing: string[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          startedProcessing.push((command.data as any).id);
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          completedProcessing.push((command.data as any).id);
-        },
-        'TestCommand',
-      );
+      messageBus.handle(async (command: Command) => {
+        startedProcessing.push(dataOf(command).id);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        completedProcessing.push(dataOf(command).id);
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -293,12 +271,11 @@ describe('MessageBus Integration Tests', () => {
       const messageBus = getTestMessageBus({ topicPrefix: 'custom-prefix' });
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -317,12 +294,11 @@ describe('MessageBus Integration Tests', () => {
       const messageBus = getTestMessageBus({ autoCreateResources: true });
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -343,12 +319,11 @@ describe('MessageBus Integration Tests', () => {
       const messageBus = getTestMessageBus();
       const receivedCommands: Command[] = [];
 
-      messageBus.handle(
-        async (command: Command) => {
-          receivedCommands.push(command);
-        },
-        'TestCommand',
-      );
+      messageBus.handle((command: Command) => {
+        receivedCommands.push(command);
+
+        return Promise.resolve();
+      }, 'TestCommand');
 
       await messageBus.start();
 
@@ -378,26 +353,23 @@ describe('MessageBus Integration Tests', () => {
       const subscriber2: Event[] = [];
       const subscriber3: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber1.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        subscriber1.push(event);
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber2.push(event);
-        },
-        'TestEvent',
-      );
+        return Promise.resolve();
+      }, 'TestEvent');
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          subscriber3.push(event);
-        },
-        'TestEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        subscriber2.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
+
+      messageBus.subscribe((event: Event) => {
+        subscriber3.push(event);
+
+        return Promise.resolve();
+      }, 'TestEvent');
 
       await messageBus.start();
 

@@ -54,29 +54,32 @@ class InMemorySubscription extends EventEmitter {
     super();
   }
 
-  async exists(): Promise<[boolean]> {
-    return [this.created];
+  exists(): Promise<[boolean]> {
+    return Promise.resolve([this.created]);
   }
 
-  async create(config?: { deadLetterPolicy?: DeadLetterPolicy }): Promise<[InMemorySubscription]> {
+  create(config?: {
+    deadLetterPolicy?: DeadLetterPolicy;
+  }): Promise<[InMemorySubscription]> {
     this.created = true;
     this.closed = false;
     this.deadLetterPolicy = config?.deadLetterPolicy;
     this.topic.registerSubscription(this);
-    return [this];
+    return Promise.resolve([this]);
   }
 
-  async delete(): Promise<[void]> {
+  delete(): Promise<[void]> {
     this.created = false;
     this.closed = true;
     this.topic.unregisterSubscription(this.name);
     this.removeAllListeners();
-    return [undefined];
+    return Promise.resolve([undefined]);
   }
 
-  async close(): Promise<void> {
+  close(): Promise<void> {
     this.closed = true;
     this.removeAllListeners();
+    return Promise.resolve();
   }
 
   /**
@@ -89,7 +92,9 @@ class InMemorySubscription extends EventEmitter {
     }
     const message = new InMemoryMessage(this, request, deliveryAttempt);
     queueMicrotask(() => {
-      const listeners = this.listeners('message') as Array<(message: InMemoryMessage) => void>;
+      const listeners = this.listeners('message') as Array<
+        (message: InMemoryMessage) => void
+      >;
       if (listeners.length === 0) {
         return;
       }
@@ -107,8 +112,10 @@ class InMemorySubscription extends EventEmitter {
       return;
     }
 
-    const { deadLetterTopic, maxDeliveryAttempts = DEFAULT_MAX_DELIVERY_ATTEMPTS } =
-      this.deadLetterPolicy;
+    const {
+      deadLetterTopic,
+      maxDeliveryAttempts = DEFAULT_MAX_DELIVERY_ATTEMPTS,
+    } = this.deadLetterPolicy;
 
     if (nextDeliveryAttempt > maxDeliveryAttempts) {
       if (deadLetterTopic) {
@@ -130,13 +137,13 @@ class InMemoryTopic {
     readonly pubsub: InMemoryPubSub,
   ) {}
 
-  async exists(): Promise<[boolean]> {
-    return [this.created];
+  exists(): Promise<[boolean]> {
+    return Promise.resolve([this.created]);
   }
 
-  async create(): Promise<[InMemoryTopic]> {
+  create(): Promise<[InMemoryTopic]> {
     this.created = true;
-    return [this];
+    return Promise.resolve([this]);
   }
 
   subscription(name: string): InMemorySubscription {
@@ -156,11 +163,11 @@ class InMemoryTopic {
     this.subscriptions.delete(name);
   }
 
-  async publishMessage(request: PublishRequest): Promise<string> {
+  publishMessage(request: PublishRequest): Promise<string> {
     for (const subscription of this.subscriptions.values()) {
       subscription.deliver(request);
     }
-    return `in-memory-${Date.now()}`;
+    return Promise.resolve(`in-memory-${Date.now()}`);
   }
 }
 
@@ -183,7 +190,7 @@ export class InMemoryPubSub {
     return topic;
   }
 
-  async close(): Promise<void> {
-    return;
+  close(): Promise<void> {
+    return Promise.resolve();
   }
 }

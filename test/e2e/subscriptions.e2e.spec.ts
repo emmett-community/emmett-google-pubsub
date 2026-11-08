@@ -12,7 +12,8 @@ let emulator: import('testcontainers').StartedTestContainer | null = null;
 let emulatorHost = '';
 let pubsubPort = 0;
 
-const getPrefix = () => `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const getPrefix = () =>
+  `e2e-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const waitFor = async (
   condition: () => boolean | Promise<boolean>,
@@ -31,22 +32,30 @@ const waitFor = async (
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const newPubSub = () => new PubSub({ projectId, apiEndpoint: `${emulatorHost}:${pubsubPort}` });
+const newPubSub = () =>
+  new PubSub({ projectId, apiEndpoint: `${emulatorHost}:${pubsubPort}` });
 
 // The container is healthy before its Pub/Sub emulator is warm: the first calls can take longer
 // than the bus setup timeout. Round-trip a topic until the emulator answers promptly.
 const warmUpPubSub = async (): Promise<void> => {
   await waitFor(
     async () => {
-      const probe = new PubSub({ projectId, apiEndpoint: `${emulatorHost}:${pubsubPort}` });
+      const probe = new PubSub({
+        projectId,
+        apiEndpoint: `${emulatorHost}:${pubsubPort}`,
+      });
       try {
         const attempt = (async () => {
-          const [topic] = await probe.createTopic(`warmup-${Math.random().toString(36).slice(2, 10)}`);
+          const [topic] = await probe.createTopic(
+            `warmup-${Math.random().toString(36).slice(2, 10)}`,
+          );
           await topic.delete();
         })();
         await Promise.race([
           attempt,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('warm-up timeout')), 3000)),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('warm-up timeout')), 3000),
+          ),
         ]);
         return true;
       } catch {
@@ -73,7 +82,8 @@ const eventOf = (id: string, metadata?: Record<string, unknown>): Event =>
   ({ type: 'SubEvent', data: { id }, ...(metadata && { metadata }) }) as Event;
 
 const idOf = (event: Event) => (event.data as { id: string }).id;
-const metadataOf = (event: Event) => (event as { metadata?: Record<string, unknown> }).metadata;
+const metadataOf = (event: Event) =>
+  (event as { metadata?: Record<string, unknown> }).metadata;
 
 beforeAll(async () => {
   emulator = await new GenericContainer('myfstartup/firebase-emulator-suite:15')
@@ -81,12 +91,24 @@ beforeAll(async () => {
     .withExposedPorts(8085)
     .withBindMounts([
       {
-        source: path.join(process.cwd(), 'test', 'support', 'firebase', 'firebase.json'),
+        source: path.join(
+          process.cwd(),
+          'test',
+          'support',
+          'firebase',
+          'firebase.json',
+        ),
         target: '/app/firebase.json',
         mode: 'ro' as const,
       },
       {
-        source: path.join(process.cwd(), 'test', 'support', 'firebase', '.firebaserc'),
+        source: path.join(
+          process.cwd(),
+          'test',
+          'support',
+          'firebase',
+          '.firebaserc',
+        ),
         target: '/app/.firebaserc',
         mode: 'ro' as const,
       },
@@ -110,14 +132,20 @@ afterAll(async () => {
 });
 
 describe('Stable subscriptions on the Pub/Sub emulator', () => {
-  it('spike S2: replicas sharing the bus subscription id receive each message once', async () => {
+  it('replicas sharing the bus subscription id receive each message once', async () => {
     const prefix = getPrefix();
     const replicaA = createBus(prefix, 'svc');
     const replicaB = createBus(prefix, 'svc');
     const gotA: string[] = [];
     const gotB: string[] = [];
-    replicaA.subscribe(async (e: Event) => void gotA.push(idOf(e)), 'SubEvent');
-    replicaB.subscribe(async (e: Event) => void gotB.push(idOf(e)), 'SubEvent');
+    replicaA.subscribe(
+      (e: Event) => Promise.resolve(void gotA.push(idOf(e))),
+      'SubEvent',
+    );
+    replicaB.subscribe(
+      (e: Event) => Promise.resolve(void gotB.push(idOf(e))),
+      'SubEvent',
+    );
     await Promise.all([replicaA.start(), replicaB.start()]);
 
     try {
@@ -132,7 +160,9 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
       expect(all).toHaveLength(total);
       expect(new Set(all).size).toBe(total);
       // eslint-disable-next-line no-console
-      console.log(`S2 distribution: replica A ${gotA.length}, replica B ${gotB.length}`);
+      console.log(
+        `S2 distribution: replica A ${gotA.length}, replica B ${gotB.length}`,
+      );
     } finally {
       await replicaA.close();
       await replicaB.close();
@@ -143,7 +173,10 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     const prefix = getPrefix();
     const received: string[] = [];
     const subscribe = (bus: ReturnType<typeof createBus>) =>
-      bus.subscribe(async (e: Event) => void received.push(idOf(e)), 'SubEvent');
+      bus.subscribe(
+        (e: Event) => Promise.resolve(void received.push(idOf(e))),
+        'SubEvent',
+      );
 
     const first = createBus(prefix, 'durable');
     subscribe(first);
@@ -163,7 +196,11 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
 
     try {
       await waitFor(() => received.length === 3, 20000);
-      expect(received.sort()).toEqual(['before', 'while-down-1', 'while-down-2']);
+      expect(received.sort()).toEqual([
+        'before',
+        'while-down-1',
+        'while-down-2',
+      ]);
     } finally {
       await second.close();
     }
@@ -173,11 +210,16 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     const prefix = getPrefix();
     const bus = createBus(prefix);
     const received: Event[] = [];
-    bus.subscribe(async (e: Event) => void received.push(e), 'SubEvent');
+    bus.subscribe(
+      (e: Event) => Promise.resolve(void received.push(e)),
+      'SubEvent',
+    );
     await bus.start();
 
     const raw = newPubSub();
-    const rawSub = raw.topic(`${prefix}-evt-SubEvent`).subscription('raw-attrs');
+    const rawSub = raw
+      .topic(`${prefix}-evt-SubEvent`)
+      .subscription('raw-attrs');
     await rawSub.create();
     const attributes: Array<Record<string, string>> = [];
     rawSub.on('message', (m) => {
@@ -186,10 +228,15 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     });
 
     try {
-      await bus.publish(eventOf('with-id', { messageId: 'store-42', schemaVersion: 2 }));
+      await bus.publish(
+        eventOf('with-id', { messageId: 'store-42', schemaVersion: 2 }),
+      );
       await waitFor(() => received.length === 1 && attributes.length === 1);
 
-      expect(metadataOf(received[0])).toMatchObject({ messageId: 'store-42', schemaVersion: 2 });
+      expect(metadataOf(received[0])).toMatchObject({
+        messageId: 'store-42',
+        schemaVersion: 2,
+      });
       expect(attributes[0]).toMatchObject({
         messageType: 'SubEvent',
         messageKind: 'event',
@@ -207,8 +254,8 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     const prefix = getPrefix();
     const bus = createBus(prefix, 'svc');
     const calls: string[] = [];
-    bus.subscribe(async () => void calls.push('first'), 'SubEvent');
-    bus.subscribe(async () => void calls.push('second'), 'SubEvent');
+    bus.subscribe(() => Promise.resolve(void calls.push('first')), 'SubEvent');
+    bus.subscribe(() => Promise.resolve(void calls.push('second')), 'SubEvent');
     await bus.start();
 
     try {
@@ -227,12 +274,20 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     const replicaB = createBus(prefix, 'svc');
     const gotA: string[] = [];
     const gotB: string[] = [];
-    replicaA.subscribeWithOptions(async (e: Event) => void gotA.push(idOf(e)), ['SubEvent'], {
-      fanOut: true,
-    });
-    replicaB.subscribeWithOptions(async (e: Event) => void gotB.push(idOf(e)), ['SubEvent'], {
-      fanOut: true,
-    });
+    replicaA.subscribeWithOptions(
+      (e: Event) => Promise.resolve(void gotA.push(idOf(e))),
+      ['SubEvent'],
+      {
+        fanOut: true,
+      },
+    );
+    replicaB.subscribeWithOptions(
+      (e: Event) => Promise.resolve(void gotB.push(idOf(e))),
+      ['SubEvent'],
+      {
+        fanOut: true,
+      },
+    );
     await Promise.all([replicaA.start(), replicaB.start()]);
 
     try {
@@ -259,7 +314,10 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
       },
     });
     const received: string[] = [];
-    bus.subscribe(async (e: Event) => void received.push(idOf(e)), 'SubEvent');
+    bus.subscribe(
+      (e: Event) => Promise.resolve(void received.push(idOf(e))),
+      'SubEvent',
+    );
     await bus.start();
 
     try {
@@ -278,10 +336,14 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     const publisher = createBus(pantry);
     const consumer = createBus(getPrefix());
     const received: string[] = [];
-    consumer.subscribeWithOptions(async (e: Event) => void received.push(idOf(e)), ['SubEvent'], {
-      subscriptionId: 'from-pantry',
-      topicPrefix: pantry,
-    });
+    consumer.subscribeWithOptions(
+      (e: Event) => Promise.resolve(void received.push(idOf(e))),
+      ['SubEvent'],
+      {
+        subscriptionId: 'from-pantry',
+        topicPrefix: pantry,
+      },
+    );
     await consumer.start();
 
     try {
@@ -300,7 +362,9 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
 
     try {
       await expect(
-        Promise.all(publishers.map((bus, i) => bus.publish(eventOf(`race-${i}`)))),
+        Promise.all(
+          publishers.map((bus, i) => bus.publish(eventOf(`race-${i}`))),
+        ),
       ).resolves.toBeDefined();
     } finally {
       await Promise.all(publishers.map((bus) => bus.close()));
@@ -313,9 +377,11 @@ describe('Stable subscriptions on the Pub/Sub emulator', () => {
     const bus = createBus(prefix);
     let attempts = 0;
     bus.subscribeWithOptions(
-      async () => {
+      () => {
         attempts++;
         throw new Error('boom');
+
+        return Promise.resolve();
       },
       ['SubEvent'],
       {

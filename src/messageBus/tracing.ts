@@ -24,7 +24,9 @@ export function toTraceparent(spanContext: SpanContext): string | undefined {
 /**
  * Parses a W3C `traceparent` value into a remote span context, or undefined if malformed.
  */
-export function parseTraceparent(value: string | undefined): SpanContext | undefined {
+export function parseTraceparent(
+  value: string | undefined,
+): SpanContext | undefined {
   const match = value ? TRACEPARENT.exec(value) : null;
   if (!match) {
     return undefined;
@@ -44,5 +46,7 @@ export function parseTraceparent(value: string | undefined): SpanContext | undef
  */
 export function contextFromTraceparent(value: string | undefined): Context {
   const spanContext = parseTraceparent(value);
-  return spanContext ? trace.setSpanContext(context.active(), spanContext) : context.active();
+  return spanContext
+    ? trace.setSpanContext(context.active(), spanContext)
+    : context.active();
 }

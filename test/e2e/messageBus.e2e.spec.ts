@@ -5,6 +5,7 @@ import type { Command, Event } from '@event-driven-io/emmett';
 import { PubSub } from '@google-cloud/pubsub';
 import { GenericContainer, Wait } from 'testcontainers';
 import { getPubSubMessageBus } from '../../src/messageBus/pubsubMessageBus';
+import { dataOf, metadataOf } from '../support/accessors';
 
 const execFileAsync = promisify(execFile);
 
@@ -91,12 +92,16 @@ const warmUpPubSub = async (
       const probe = new PubSub({ projectId, apiEndpoint: `${host}:${port}` });
       try {
         const attempt = (async () => {
-          const [topic] = await probe.createTopic(`warmup-${Math.random().toString(36).slice(2, 10)}`);
+          const [topic] = await probe.createTopic(
+            `warmup-${Math.random().toString(36).slice(2, 10)}`,
+          );
           await topic.delete();
         })();
         await Promise.race([
           attempt,
-          new Promise((_, reject) => setTimeout(() => reject(new Error('warm-up timeout')), 3000)),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('warm-up timeout')), 3000),
+          ),
         ]);
         return true;
       } catch {
@@ -142,19 +147,17 @@ describe('PubSub message bus e2e', () => {
     const receivedCommands: Command[] = [];
     const receivedEvents: Event[] = [];
 
-    messageBus.handle(
-      async (command: Command) => {
-        receivedCommands.push(command);
-      },
-      'TestCommand',
-    );
+    messageBus.handle((command: Command) => {
+      receivedCommands.push(command);
 
-    messageBus.subscribe(
-      async (event: Event) => {
-        receivedEvents.push(event);
-      },
-      'TestEvent',
-    );
+      return Promise.resolve();
+    }, 'TestCommand');
+
+    messageBus.subscribe((event: Event) => {
+      receivedEvents.push(event);
+
+      return Promise.resolve();
+    }, 'TestEvent');
 
     await messageBus.start();
 
@@ -175,9 +178,9 @@ describe('PubSub message bus e2e', () => {
       );
 
       expect(receivedCommands[0].type).toBe('TestCommand');
-      expect((receivedCommands[0].data as any).id).toBe('cmd-1');
+      expect(dataOf(receivedCommands[0]).id).toBe('cmd-1');
       expect(receivedEvents[0].type).toBe('TestEvent');
-      expect((receivedEvents[0].data as any).id).toBe('evt-1');
+      expect(dataOf(receivedEvents[0]).id).toBe('evt-1');
     } finally {
       await messageBus.close();
     }
@@ -189,19 +192,17 @@ describe('PubSub message bus e2e', () => {
     const subscriberA: Event[] = [];
     const subscriberB: Event[] = [];
 
-    messageBus.subscribe(
-      async (event: Event) => {
-        subscriberA.push(event);
-      },
-      'TestEvent',
-    );
+    messageBus.subscribe((event: Event) => {
+      subscriberA.push(event);
 
-    messageBus.subscribe(
-      async (event: Event) => {
-        subscriberB.push(event);
-      },
-      'TestEvent',
-    );
+      return Promise.resolve();
+    }, 'TestEvent');
+
+    messageBus.subscribe((event: Event) => {
+      subscriberB.push(event);
+
+      return Promise.resolve();
+    }, 'TestEvent');
 
     await messageBus.start();
 
@@ -216,8 +217,8 @@ describe('PubSub message bus e2e', () => {
         10000,
       );
 
-      expect((subscriberA[0].data as any).id).toBe('evt-fanout');
-      expect((subscriberB[0].data as any).id).toBe('evt-fanout');
+      expect(dataOf(subscriberA[0]).id).toBe('evt-fanout');
+      expect(dataOf(subscriberB[0]).id).toBe('evt-fanout');
     } finally {
       await messageBus.close();
     }
@@ -229,19 +230,17 @@ describe('PubSub message bus e2e', () => {
     const receivedA: Command[] = [];
     const receivedB: Command[] = [];
 
-    messageBus.handle(
-      async (command: Command) => {
-        receivedA.push(command);
-      },
-      'TestCommandA',
-    );
+    messageBus.handle((command: Command) => {
+      receivedA.push(command);
 
-    messageBus.handle(
-      async (command: Command) => {
-        receivedB.push(command);
-      },
-      'TestCommandB',
-    );
+      return Promise.resolve();
+    }, 'TestCommandA');
+
+    messageBus.handle((command: Command) => {
+      receivedB.push(command);
+
+      return Promise.resolve();
+    }, 'TestCommandB');
 
     await messageBus.start();
 
@@ -261,8 +260,8 @@ describe('PubSub message bus e2e', () => {
         10000,
       );
 
-      expect((receivedA[0].data as any).id).toBe('cmd-a');
-      expect((receivedB[0].data as any).id).toBe('cmd-b');
+      expect(dataOf(receivedA[0]).id).toBe('cmd-a');
+      expect(dataOf(receivedB[0]).id).toBe('cmd-b');
     } finally {
       await messageBus.close();
     }
@@ -276,19 +275,17 @@ describe('PubSub message bus e2e', () => {
     const receivedCommands: Command[] = [];
     const receivedEvents: Event[] = [];
 
-    consumer.handle(
-      async (command: Command) => {
-        receivedCommands.push(command);
-      },
-      'ProducerOnlyCommand',
-    );
+    consumer.handle((command: Command) => {
+      receivedCommands.push(command);
 
-    consumer.subscribe(
-      async (event: Event) => {
-        receivedEvents.push(event);
-      },
-      'ProducerOnlyEvent',
-    );
+      return Promise.resolve();
+    }, 'ProducerOnlyCommand');
+
+    consumer.subscribe((event: Event) => {
+      receivedEvents.push(event);
+
+      return Promise.resolve();
+    }, 'ProducerOnlyEvent');
 
     await consumer.start();
 
@@ -308,8 +305,8 @@ describe('PubSub message bus e2e', () => {
         10000,
       );
 
-      expect((receivedCommands[0].data as any).id).toBe('cmd-producer');
-      expect((receivedEvents[0].data as any).id).toBe('evt-producer');
+      expect(dataOf(receivedCommands[0]).id).toBe('cmd-producer');
+      expect(dataOf(receivedEvents[0]).id).toBe('evt-producer');
     } finally {
       await consumer.close();
       await producer.close();
@@ -324,19 +321,17 @@ describe('PubSub message bus e2e', () => {
     const receivedA: Event[] = [];
     const receivedB: Event[] = [];
 
-    busA.subscribe(
-      async (event: Event) => {
-        receivedA.push(event);
-      },
-      'SharedEvent',
-    );
+    busA.subscribe((event: Event) => {
+      receivedA.push(event);
 
-    busB.subscribe(
-      async (event: Event) => {
-        receivedB.push(event);
-      },
-      'SharedEvent',
-    );
+      return Promise.resolve();
+    }, 'SharedEvent');
+
+    busB.subscribe((event: Event) => {
+      receivedB.push(event);
+
+      return Promise.resolve();
+    }, 'SharedEvent');
 
     await Promise.all([busA.start(), busB.start()]);
 
@@ -351,8 +346,8 @@ describe('PubSub message bus e2e', () => {
         10000,
       );
 
-      expect((receivedA[0].data as any).id).toBe('evt-shared');
-      expect((receivedB[0].data as any).id).toBe('evt-shared');
+      expect(dataOf(receivedA[0]).id).toBe('evt-shared');
+      expect(dataOf(receivedB[0]).id).toBe('evt-shared');
     } finally {
       await busA.close();
       await busB.close();
@@ -363,12 +358,11 @@ describe('PubSub message bus e2e', () => {
     const messageBus = createMessageBus();
     const receivedEvents: Event[] = [];
 
-    messageBus.subscribe(
-      async (event: Event) => {
-        receivedEvents.push(event);
-      },
-      'MetadataEvent',
-    );
+    messageBus.subscribe((event: Event) => {
+      receivedEvents.push(event);
+
+      return Promise.resolve();
+    }, 'MetadataEvent');
 
     await messageBus.start();
 
@@ -385,7 +379,7 @@ describe('PubSub message bus e2e', () => {
 
       await waitFor(() => receivedEvents.length === 1, 10000);
 
-      const receivedMetadata = (receivedEvents[0] as any).metadata;
+      const receivedMetadata = metadataOf(receivedEvents[0]);
       expect(receivedMetadata).toBeDefined();
       expect(receivedMetadata?.now).toBeInstanceOf(Date);
       expect((receivedMetadata?.now as Date).toISOString()).toBe(
@@ -402,8 +396,9 @@ describe('PubSub message bus e2e', () => {
     // reassigning the host port across a restart when it is dynamically
     // allocated, which would otherwise be mistaken for the bug under test).
     const idleRecoveryPort = 18086;
-    let idleRecoveryContainer: import('testcontainers').StartedTestContainer | null =
-      null;
+    let idleRecoveryContainer:
+      | import('testcontainers').StartedTestContainer
+      | null = null;
 
     beforeAll(async () => {
       idleRecoveryContainer = await new GenericContainer(
@@ -474,12 +469,11 @@ describe('PubSub message bus e2e', () => {
       });
       const receivedEvents: Event[] = [];
 
-      messageBus.subscribe(
-        async (event: Event) => {
-          receivedEvents.push(event);
-        },
-        'IdleRecoveryEvent',
-      );
+      messageBus.subscribe((event: Event) => {
+        receivedEvents.push(event);
+
+        return Promise.resolve();
+      }, 'IdleRecoveryEvent');
 
       await messageBus.start();
 
@@ -490,7 +484,7 @@ describe('PubSub message bus e2e', () => {
         });
 
         await waitFor(() => receivedEvents.length === 1, 10000);
-        expect((receivedEvents[0].data as any).id).toBe('evt-before-restart');
+        expect(dataOf(receivedEvents[0]).id).toBe('evt-before-restart');
 
         // Restarting the container in place (same id, same fixed port)
         // simulates the emulator's gRPC server going away and coming back
@@ -505,12 +499,18 @@ describe('PubSub message bus e2e', () => {
         // this isolates "the connection recovered" from "the app noticed".
         await waitFor(
           async () => {
-            const probe = new PubSub({ projectId, apiEndpoint: `${host}:${port}` });
+            const probe = new PubSub({
+              projectId,
+              apiEndpoint: `${host}:${port}`,
+            });
             try {
               await Promise.race([
                 probe.getTopics(),
                 new Promise((_, reject) =>
-                  setTimeout(() => reject(new Error('probe attempt timeout')), 2000),
+                  setTimeout(
+                    () => reject(new Error('probe attempt timeout')),
+                    2000,
+                  ),
                 ),
               ]);
               return true;
@@ -536,14 +536,17 @@ describe('PubSub message bus e2e', () => {
             }
             await messageBus.publish({
               type: 'IdleRecoveryEvent',
-              data: { id: `evt-after-restart-${attempt++}`, value: 'post-restart' },
+              data: {
+                id: `evt-after-restart-${attempt++}`,
+                value: 'post-restart',
+              },
             });
             return false;
           },
           30000,
           1000,
         );
-        expect((receivedEvents[1].data as any).id).toMatch(/^evt-after-restart-\d+$/);
+        expect(dataOf(receivedEvents[1]).id).toMatch(/^evt-after-restart-\d+$/);
       } finally {
         await messageBus.close();
       }
