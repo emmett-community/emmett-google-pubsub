@@ -19,9 +19,9 @@ This document describes the design decisions and architecture of `@emmett-commun
 
 The package provides a distributed message bus implementation using Google Cloud Pub/Sub that is fully compatible with Emmett's `MessageBus` interface. It enables scaling command and event handling across multiple application instances while maintaining the same programming model as the in-memory message bus.
 
-```
+```bash
 ┌─────────────────────────────────────────────────────────────┐
-│                     Application                              │
+│                     Application                             │
 ├──────────────────────┬──────────────────────────────────────┤
 │   MessageBus API     │        Emmett Interfaces             │
 │   - send()           │   - MessageBus                       │
@@ -29,16 +29,16 @@ The package provides a distributed message bus implementation using Google Cloud
 │   - handle()         │   - EventSubscription                │
 │   - subscribe()      │   - ScheduledMessageProcessor        │
 ├──────────────────────┴──────────────────────────────────────┤
-│              PubSub Message Bus Implementation               │
-│   ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │
-│   │ Topic       │  │ Message     │  │ Scheduler       │    │
-│   │ Manager     │  │ Handler     │  │ (Dual Mode)     │    │
-│   └─────────────┘  └─────────────┘  └─────────────────┘    │
+│              PubSub Message Bus Implementation              │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐     │
+│   │ Topic       │  │ Message     │  │ Scheduler       │     │
+│   │ Manager     │  │ Handler     │  │ (Dual Mode)     │     │
+│   └─────────────┘  └─────────────┘  └─────────────────┘     │
 ├─────────────────────────────────────────────────────────────┤
-│                  Google Cloud Pub/Sub                        │
-│   ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐    │
-│   │ Topics      │  │Subscriptions│  │ Cloud Scheduler │    │
-│   └─────────────┘  └─────────────┘  └─────────────────┘    │
+│                  Google Cloud Pub/Sub                       │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐     │
+│   │ Topics      │  │Subscriptions│  │ Cloud Scheduler │     │
+│   └─────────────┘  └─────────────┘  └─────────────────┘     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -50,12 +50,12 @@ The package provides a distributed message bus implementation using Google Cloud
 
 All topics and subscriptions follow a consistent naming pattern:
 
-```
+```bash
 {prefix}-{kind}-{MessageType}[-{subscriptionId}]
 ```
 
 | Component | Description | Example |
-|-----------|-------------|---------|
+| --------- | ----------- | ------- |
 | `prefix` | Configurable prefix | `emmett`, `myapp` |
 | `kind` | `cmd` or `evt` | `cmd`, `evt` |
 | `MessageType` | The message type name | `AddProductItem` |
@@ -63,7 +63,7 @@ All topics and subscriptions follow a consistent naming pattern:
 
 **Examples:**
 
-```
+```bash
 # Command topic
 emmett-cmd-AddProductItem
 
@@ -81,7 +81,7 @@ emmett-evt-ProductItemAdded-subscriber-456
 
 Commands implement the **competing consumers** pattern:
 
-```
+```bash
 ┌──────────────┐
 │   Producer   │
 └──────┬───────┘
@@ -115,7 +115,7 @@ Commands implement the **competing consumers** pattern:
 
 Events implement the **fan-out** pattern:
 
-```
+```bash
 ┌──────────────┐
 │   Producer   │
 └──────┬───────┘
@@ -186,13 +186,13 @@ await messageBus.publish({ type: 'SomethingDone', data: {} });  // → event
 
 ### Three Phases
 
-```
+```bash
 ┌─────────────────────────────────────────────────────────────┐
-│                 1. REGISTRATION PHASE                        │
-│                                                              │
+│                 1. REGISTRATION PHASE                       │
+│                                                             │
 │   messageBus.handle(handler, 'CommandA', 'CommandB')        │
 │   messageBus.subscribe(handler, 'EventA', 'EventB')         │
-│                                                              │
+│                                                             │
 │   • Handlers stored in local Map                            │
 │   • No PubSub resources created yet                         │
 │   • Can be called multiple times (accumulates)              │
@@ -200,10 +200,10 @@ await messageBus.publish({ type: 'SomethingDone', data: {} });  // → event
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    2. STARTUP PHASE                          │
-│                                                              │
-│   await messageBus.start()                                   │
-│                                                              │
+│                    2. STARTUP PHASE                         │
+│                                                             │
+│   await messageBus.start()                                  │
+│                                                             │
 │   • Creates all topics (if autoCreateResources: true)       │
 │   • Creates all subscriptions                               │
 │   • Attaches message listeners                              │
@@ -212,20 +212,20 @@ await messageBus.publish({ type: 'SomethingDone', data: {} });  // → event
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                    3. RUNTIME PHASE                          │
-│                                                              │
+│                    3. RUNTIME PHASE                         │
+│                                                             │
 │   • Messages routed to registered handlers                  │
-│   • send()/publish() work without start() (producer-only)  │
+│   • send()/publish() work without start() (producer-only)   │
 │   • Handlers execute asynchronously                         │
 │   • Ack/nack based on handler result                        │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                   4. SHUTDOWN PHASE                          │
-│                                                              │
-│   await messageBus.close()                                   │
-│                                                              │
+│                   4. SHUTDOWN PHASE                         │
+│                                                             │
+│   await messageBus.close()                                  │
+│                                                             │
 │   • Stops accepting new messages                            │
 │   • Waits for in-flight messages                            │
 │   • Removes listeners                                       │
@@ -319,7 +319,7 @@ const messageBus = getPubSubMessageBus({
 The `useEmulator` flag determines:
 
 | Feature | `useEmulator: false` | `useEmulator: true` |
-|---------|---------------------|---------------------|
+| ------- | -------------------- | ------------------- |
 | Scheduling | Cloud Scheduler | In-memory queue |
 | `dequeue()` | Returns `[]` | Returns ready messages |
 | Auto-delivery | Yes | No (manual) |
@@ -330,7 +330,7 @@ The `useEmulator` flag determines:
 
 ### Acknowledgment Flow
 
-```
+```bash
 ┌─────────────────┐
 │ Message Received│
 └────────┬────────┘
@@ -340,44 +340,50 @@ The `useEmulator` flag determines:
 │ Find Handler    │
 └────────┬────────┘
          │
-    ┌────┴────┐
+         ▼
+    ┌─────────┐
     │ Found?  │
     └────┬────┘
     No   │   Yes
-    │    │    │
-    ▼    │    ▼
-┌───────┐│┌─────────────┐
-│ ACK   │││ Execute     │
-│(+log) │││ Handler     │
-└───────┘│└──────┬──────┘
-         │       │
-         │  ┌────┴────┐
-         │  │Success? │
-         │  └────┬────┘
-         │  Yes  │  No
-         │   │   │   │
-         │   ▼   │   ▼
-         │┌─────┐│┌─────────────┐
-         ││ ACK │││ Classify    │
-         │└─────┘││ Error       │
-         │       │└──────┬──────┘
-         │       │       │
-         │       │ ┌─────┴─────┐
-         │       │ │  Retry?   │
-         │       │ └─────┬─────┘
-         │       │  Yes  │  No
-         │       │   │   │   │
-         │       │   ▼   │   ▼
-         │       │┌─────┐│┌─────┐
-         │       ││NACK │││ ACK │
-         │       ││retry│││+log │
-         │       │└─────┘│└─────┘
+   ┌─────┴──────┐
+   │            │
+   ▼            ▼
+┌───────┐  ┌─────────────┐
+│ ACK   │  │ Execute     │
+│(+log) │  │ Handler     │
+└───────┘  └──────┬──────┘
+                  │
+                  ▼
+             ┌─────────┐
+             │Success? │
+             └────┬────┘
+              Yes │  No
+            ┌─────┴─────┐
+            │           │
+            ▼           ▼
+         ┌─────┐  ┌───────────┐
+         │ ACK │  │ Classify  │
+         └─────┘  │ Error     │
+                  └─────┬─────┘
+                        │
+                        ▼
+                  ┌───────────┐
+                  │  Retry?   │
+                  └─────┬─────┘
+                    Yes │  No
+                  ┌─────┴─────┐
+                  │           │
+                  ▼           ▼
+              ┌───────┐   ┌───────┐
+              │ NACK  │   │ ACK   │
+              │(retry)│   │(+log) │
+              └───────┘   └───────┘
 ```
 
 ### Error Classification
 
 | Error Type | Action | Example |
-|------------|--------|---------|
+| ---------- | ------ | ------- |
 | **Any error that is not an `EmmettError`** | NACK (retry, then the dead letter topic) | Network timeout, rate limit, an authentication failure, a bug |
 | **`EmmettError`** (and subclasses) | ACK + log | Business rule violation, no handler registered for a command |
 | **No handler for an event** | ACK | Events without handlers are ignored |
@@ -481,10 +487,10 @@ function dateReviver(key: string, value: unknown) {
 
 ### Topic-per-Type vs Single Topic
 
-**Chosen: Topic-per-Type**
+#### Chosen: Topic-per-Type**
 
 | Aspect | Topic-per-Type | Single Topic |
-|--------|---------------|--------------|
+| ------ | -------------- | ------------ |
 | Filtering | Native (subscription filter) | Application-level |
 | Scalability | Independent scaling | Bottleneck risk |
 | Cost | More topics | Fewer topics |
@@ -494,7 +500,7 @@ function dateReviver(key: string, value: unknown) {
 
 ### Instance ID vs Shared Subscription
 
-**Chosen: Configurable Instance ID**
+#### Chosen: Configurable Instance ID**
 
 - Default: Auto-generated UUID
 - Option: Custom `instanceId` for sticky subscriptions
@@ -516,7 +522,7 @@ const bus2 = getPubSubMessageBus({
 
 ### Emulator Scheduling
 
-**Chosen: In-Memory Queue**
+#### Chosen: In-Memory Queue**
 
 Alternatives considered:
 
