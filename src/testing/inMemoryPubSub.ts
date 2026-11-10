@@ -128,8 +128,17 @@ class InMemorySubscription extends EventEmitter {
   }
 }
 
+const notFound = (name: string) =>
+  Object.assign(
+    new Error(`5 NOT_FOUND: Resource not found (resource=${name}).`),
+    {
+      code: 5,
+    },
+  );
+
 class InMemoryTopic {
   private created = false;
+  private deleted = false;
   private readonly subscriptions = new Map<string, InMemorySubscription>();
 
   constructor(
@@ -141,9 +150,23 @@ class InMemoryTopic {
     return Promise.resolve([this.created]);
   }
 
+  getMetadata(): Promise<[{ name: string }]> {
+    return this.created
+      ? Promise.resolve([{ name: this.name }])
+      : Promise.reject(notFound(this.name));
+  }
+
   create(): Promise<[InMemoryTopic]> {
     this.created = true;
+    this.deleted = false;
     return Promise.resolve([this]);
+  }
+
+  /** Deletes the topic, as an operator could: publishing to it fails with NOT_FOUND until it is created again. */
+  delete(): Promise<void> {
+    this.created = false;
+    this.deleted = true;
+    return Promise.resolve();
   }
 
   subscription(name: string): InMemorySubscription {
@@ -164,6 +187,9 @@ class InMemoryTopic {
   }
 
   publishMessage(request: PublishRequest): Promise<string> {
+    if (this.deleted) {
+      return Promise.reject(notFound(this.name));
+    }
     for (const subscription of this.subscriptions.values()) {
       subscription.deliver(request);
     }

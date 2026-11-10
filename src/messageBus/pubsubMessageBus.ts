@@ -38,7 +38,7 @@ import {
   createMessageListener,
   startSubscriptionWatchdog,
 } from './messageHandler';
-import { generateUUID } from './utils';
+import { assertPositiveNumber, generateUUID, isNotFound } from './utils';
 import { safeLog } from './observability';
 import { toTraceparent } from './tracing';
 
@@ -122,6 +122,21 @@ export function getPubSubMessageBus(
   const autoCreateResources = config.autoCreateResources ?? true;
   const cleanupOnClose = config.cleanupOnClose ?? false;
   const closePubSubClient = config.closePubSubClient;
+
+  // Each client call of a publication (topic check, creation, publish) is bounded by the
+  // publish timeout when one is configured
+  if (config.publishTimeoutMs !== undefined) {
+    assertPositiveNumber(config.publishTimeoutMs, 'publishTimeoutMs');
+  }
+  const publishCallOptions =
+    config.publishTimeoutMs !== undefined
+      ? { timeout: config.publishTimeoutMs }
+      : {};
+
+  // Topic objects are kept, as the client documentation recommends, and a topic is checked (or
+  // created) once; a NOT_FOUND on publish forgets it, so it is checked again
+  const topics = new Map<string, Topic>();
+  const checkedTopics = new Set<string>();
 
   // Map of message type to handlers
   const handlers = new Map<
@@ -317,6 +332,56 @@ export function getPubSubMessageBus(
     watchdogStoppers.push(stopWatchdog);
   }
 
+  function topicFor(topicName: string): Topic {
+    let topic = topics.get(topicName);
+    if (!topic) {
+      topic = config.pubsub.topic(topicName, { gaxOpts: publishCallOptions });
+      topics.set(topicName, topic);
+    }
+    return topic;
+  }
+
+  async function topicExists(topic: Topic): Promise<boolean> {
+    try {
+      await topic.getMetadata(publishCallOptions);
+      return true;
+    } catch (error) {
+      if (isNotFound(error)) {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * The topic of a publication, checked (and created when auto-create is on) the first time
+   */
+  async function ensureTopic(topicName: string): Promise<Topic> {
+    const topic = topicFor(topicName);
+    if (checkedTopics.has(topicName)) {
+      return topic;
+    }
+
+    if (!(await topicExists(topic))) {
+      if (!autoCreateResources) {
+        throw new Error(
+          `Topic ${topicName} does not exist and autoCreateResources is disabled`,
+        );
+      }
+      try {
+        await topic.create(publishCallOptions);
+      } catch (createError) {
+        // ALREADY_EXISTS (code 6): another publisher created it between the check and now
+        if ((createError as { code?: number }).code !== 6) {
+          throw createError;
+        }
+      }
+    }
+
+    checkedTopics.add(topicName);
+    return topic;
+  }
+
   /**
    * Publish a message to a PubSub topic
    *
@@ -332,85 +397,75 @@ export function getPubSubMessageBus(
         ? 'emmett.pubsub.send_command'
         : 'emmett.pubsub.publish_event';
 
-    const span = tracer.startSpan(spanName, {
-      attributes: { 'emmett.message.kind': kind },
-    });
+    // Active, so the spans of the Pub/Sub client calls are children of the publication
+    return tracer.startActiveSpan(
+      spanName,
+      { attributes: { 'emmett.message.kind': kind } },
+      async (span) => {
+        try {
+          // Publishing without start() is allowed (producer-only mode)
+          // start() is only required for consumers (handlers/subscribers)
 
-    try {
-      // Publishing without start() is allowed (producer-only mode)
-      // start() is only required for consumers (handlers/subscribers)
+          // Get topic name
+          const topicName =
+            kind === 'command'
+              ? getCommandTopicName(message.type, topicPrefix)
+              : getEventTopicName(message.type, topicPrefix);
 
-      // Get topic name
-      const topicName =
-        kind === 'command'
-          ? getCommandTopicName(message.type, topicPrefix)
-          : getEventTopicName(message.type, topicPrefix);
+          safeLog.debug(logger, 'Publishing message');
 
-      safeLog.debug(logger, 'Publishing message');
+          const topic = await ensureTopic(topicName);
 
-      // Get topic
-      const topic = config.pubsub.topic(topicName);
+          // Keep the id the message already has (e.g. from the event store) so it is stable
+          // across publications; consumers deduplicate by it
+          const metadata = (message as { metadata?: Record<string, unknown> })
+            .metadata;
+          const messageId =
+            typeof metadata?.messageId === 'string'
+              ? metadata.messageId
+              : generateUUID();
+          const schemaVersion = metadata?.schemaVersion;
+          const traceparent = toTraceparent(span.spanContext());
 
-      // Check if topic exists if auto-create is disabled
-      if (!autoCreateResources) {
-        const [exists] = await topic.exists();
-        if (!exists) {
-          throw new Error(
-            `Topic ${topicName} does not exist and autoCreateResources is disabled`,
-          );
-        }
-      } else {
-        // Create topic if it doesn't exist
-        const [exists] = await topic.exists();
-        if (!exists) {
+          // Serialize message
+          const buffer = serialize(message, messageId);
+
+          const request = {
+            data: buffer,
+            attributes: {
+              messageType: message.type,
+              messageKind: kind,
+              messageId,
+              ...(schemaVersion !== undefined && {
+                schemaVersion: String(schemaVersion as string | number),
+              }),
+              ...(traceparent && { traceparent }),
+            },
+          };
+
+          // Publish
           try {
-            await topic.create();
-          } catch (createError) {
-            // ALREADY_EXISTS (code 6): another publisher created it between the check and now
-            if ((createError as { code?: number }).code !== 6) {
-              throw createError;
+            await topic.publishMessage(request);
+          } catch (publishError) {
+            // NOT_FOUND (code 5): the topic was deleted after it was checked; check it again
+            if (!isNotFound(publishError)) {
+              throw publishError;
             }
+            checkedTopics.delete(topicName);
+            await (await ensureTopic(topicName)).publishMessage(request);
           }
+
+          span.setStatus({ code: SpanStatusCode.OK });
+        } catch (error) {
+          span.recordException(error as Error);
+          span.setStatus({ code: SpanStatusCode.ERROR });
+          safeLog.error(logger, 'Failed to publish message', error);
+          throw error;
+        } finally {
+          span.end();
         }
-      }
-
-      // Keep the id the message already has (e.g. from the event store) so it is stable
-      // across publications; consumers deduplicate by it
-      const metadata = (message as { metadata?: Record<string, unknown> })
-        .metadata;
-      const messageId =
-        typeof metadata?.messageId === 'string'
-          ? metadata.messageId
-          : generateUUID();
-      const schemaVersion = metadata?.schemaVersion;
-      const traceparent = toTraceparent(span.spanContext());
-
-      // Serialize message
-      const buffer = serialize(message, messageId);
-
-      // Publish
-      await topic.publishMessage({
-        data: buffer,
-        attributes: {
-          messageType: message.type,
-          messageKind: kind,
-          messageId,
-          ...(schemaVersion !== undefined && {
-            schemaVersion: String(schemaVersion as string | number),
-          }),
-          ...(traceparent && { traceparent }),
-        },
-      });
-
-      span.setStatus({ code: SpanStatusCode.OK });
-    } catch (error) {
-      span.recordException(error as Error);
-      span.setStatus({ code: SpanStatusCode.ERROR });
-      safeLog.error(logger, 'Failed to publish message', error);
-      throw error;
-    } finally {
-      span.end();
-    }
+      },
+    );
   }
 
   /**
@@ -841,6 +896,9 @@ export function getPubSubMessageBus(
 
             started = false;
           }
+
+          topics.clear();
+          checkedTopics.clear();
 
           // Always close PubSub client (even if not started, for producer-only mode)
           if (closePubSubClient !== false) {

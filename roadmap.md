@@ -1,6 +1,6 @@
 # Roadmap
 
-Work planned for this library. All changes must be backward compatible. Status was checked against the code of version 0.6.0.
+Work planned for this library. All changes must be backward compatible. Status was checked against the code of version 0.8.0.
 
 Legend: Done, Partial, Open.
 
@@ -15,8 +15,10 @@ Legend: Done, Partial, Open.
 | Expose the acknowledgement deadline and flow control options of the client | Done | `subscriptionOptions.subscriber` is passed to the client subscription (0.6.0); `ackDeadlineSeconds` already set the stored deadline. The client does not treat flow control as a hard cap |
 | Topic prefix configurable per bus | Done | `topicPrefix` in `PubSubMessageBusConfig` |
 | Allow a subscriber to read topics published under a different prefix | Done | `topicPrefix` in the `subscribeWithOptions` options (0.6.0); the subscription itself keeps the bus prefix |
-| Propagate trace context in message attributes | Partial | The publish span context is sent as `traceparent` and the handling span uses it as remote parent (0.6.0). Covered by unit tests of the encoding and by delivery of the attribute to handlers; not yet run end to end with a tracing SDK registered, where no `traceparent` is sent because span contexts are invalid |
+| Propagate trace context in message attributes | Done | The publish span context is sent as `traceparent` and the handling span uses it as remote parent (0.6.0). Since 0.8.0 handlers run with the handling span active, a message without `traceparent` starts its own trace, and the publication span is active so the Pub/Sub client spans are its children. Covered by unit tests with an OpenTelemetry SDK registered, and checked end to end on the emulator with the OpenTelemetry SDK exporting to the console |
 | `/testing` entry with an in-memory implementation | Done | `InMemoryPubSub` and `createInMemoryMessageBus` exported as `/testing` (0.6.0). The fake now models competing consumers on one subscription and redelivery to a dead letter topic |
+| Keep topic objects instead of looking them up on every publication | Done | The bus keeps the topic objects and checks a topic on its first publication only; a NOT_FOUND on publish checks it again (0.8.0) |
+| Bound the time of a publication | Done | `publishTimeoutMs` limits each client call of a publication, retries included (0.8.0). Without it a publish that keeps failing takes about 80 s (measured), longer than a 60 s gateway deadline |
 
 ## Risks
 

@@ -9,7 +9,7 @@ import type {
   SingleRawMessageHandlerWithoutContext,
 } from '@event-driven-io/emmett';
 import { EmmettError } from '@event-driven-io/emmett';
-import { trace, SpanStatusCode } from '@opentelemetry/api';
+import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 import { deserializeWithMetadata } from './serialization';
 import { safeLog } from './observability';
 import { contextFromTraceparent } from './tracing';
@@ -56,11 +56,13 @@ export async function handleCommandMessage(
   commandType: string,
   logger?: Logger,
 ): Promise<'ack' | 'nack'> {
+  const parentContext = contextFromTraceparent(message.attributes?.traceparent);
   const span = tracer.startSpan(
     'emmett.pubsub.handle_command',
     { attributes: { 'emmett.message.kind': 'command' } },
-    contextFromTraceparent(message.attributes?.traceparent),
+    parentContext,
   );
+  const handlingContext = trace.setSpan(parentContext, span);
 
   try {
     // Get handlers for this command type
@@ -88,7 +90,7 @@ export async function handleCommandMessage(
 
     // Execute the handler
     const handler = commandHandlers[0];
-    await handler(command);
+    await context.with(handlingContext, () => handler(command));
 
     span.setStatus({ code: SpanStatusCode.OK });
     return 'ack';
@@ -125,11 +127,13 @@ export async function handleEventMessage(
   eventType: string,
   logger?: Logger,
 ): Promise<'ack' | 'nack'> {
+  const parentContext = contextFromTraceparent(message.attributes?.traceparent);
   const span = tracer.startSpan(
     'emmett.pubsub.handle_event',
     { attributes: { 'emmett.message.kind': 'event' } },
-    contextFromTraceparent(message.attributes?.traceparent),
+    parentContext,
   );
+  const handlingContext = trace.setSpan(parentContext, span);
 
   try {
     // Get handlers for this event type
@@ -151,7 +155,7 @@ export async function handleEventMessage(
     // Execute all handlers sequentially
     for (const handler of eventHandlers) {
       try {
-        await handler(event);
+        await context.with(handlingContext, () => handler(event));
       } catch (error) {
         safeLog.error(logger, 'Event handler failed', error);
 

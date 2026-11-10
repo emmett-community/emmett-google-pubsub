@@ -105,6 +105,14 @@ export interface PubSubMessageBusConfig {
   cleanupOnClose?: boolean;
 
   /**
+   * Time limit, in milliseconds, of each Pub/Sub client call of a publication: the check of the
+   * topic, its creation and the publish, retries included. Without it the client defaults apply:
+   * a publish that keeps failing is retried for 60 seconds, plus the wait for the last attempt.
+   * Set it when the publication runs inside a request that has a deadline of its own.
+   */
+  publishTimeoutMs?: number;
+
+  /**
    * Close the PubSub client on close
    * Set to false if you want to reuse the client (e.g., in tests)
    * @default true

@@ -149,6 +149,7 @@ const messageBus = getPubSubMessageBus({
   autoCreateResources: true,       // Auto-create topics/subs (default: true)
   cleanupOnClose: false,           // Delete subs on close (default: false)
   closePubSubClient: true,         // Close PubSub on close (default: true)
+  publishTimeoutMs: 10000,         // Limit of each client call of a publication (default: client defaults)
   subscriptionOptions: {           // Subscription config
     ackDeadlineSeconds: 60,
     retryPolicy: {
@@ -457,6 +458,12 @@ sdk.start();
 // Spans from emmett-google-pubsub are now captured
 const messageBus = getPubSubMessageBus({ pubsub });
 ```
+
+A publication and the handling of the message it publishes are one trace:
+
+- `emmett.pubsub.publish_event` and `emmett.pubsub.send_command` are children of the span active when you publish, and are active themselves, so the spans of the Pub/Sub client (with `new PubSub({ enableOpenTelemetryTracing: true })`) are their children.
+- The publication span context travels in the `traceparent` message attribute. `emmett.pubsub.handle_event` and `emmett.pubsub.handle_command` are its children, and a message without a valid `traceparent` starts a trace of its own.
+- Handlers run with the handling span active, so what they do (an event store append, an HTTP call) is traced under it.
 
 **Notes:**
 

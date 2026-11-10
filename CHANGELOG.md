@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-11-09
+
+### Added
+
+- `publishTimeoutMs` config: the time limit of each Pub/Sub client call of a publication (the check of the topic, its creation and the publish), retries included. Without it the client defaults apply, under which a publish that keeps failing is retried for 60 seconds plus the wait for the last attempt (about 80 seconds measured against an address where nothing answers). A publication inside a request with a deadline of its own, such as one behind a gateway, needs a shorter limit. An integration test with the real client checks that a publication fails within the limit.
+- `getMetadata` and `delete` on the in-memory topic of `/testing`; publishing to a deleted topic fails with NOT_FOUND.
+- Unit tests of the tracing context with an OpenTelemetry SDK registered (`@opentelemetry/sdk-trace-base` and `@opentelemetry/context-async-hooks` as development dependencies).
+
+### Changed
+
+- Topic objects are kept by the bus, as the client documentation recommends, and a topic is checked, and created with `autoCreateResources`, on its first publication only, instead of on every publication. A publish that fails with NOT_FOUND because the topic was deleted after the check checks it again and publishes once more. The check uses `topic.getMetadata()` instead of `topic.exists()`, so it can take the publish timeout; a Pub/Sub double passed as `pubsub` needs `getMetadata` on its topics (the `InMemoryPubSub` of `/testing` has it).
+- The `shopping-cart` example uses the `InMemoryPubSub` of `/testing` instead of a fake of its own.
+
+### Fixed
+
+- Handlers run with the handling span (`emmett.pubsub.handle_event`, `emmett.pubsub.handle_command`) active. Before, what a handler did was traced outside the trace of the message: the spans of an event store append made by a subscriber, for example, joined the trace of `emmett.pubsub.start`, active when the listener was attached.
+- A message without a valid `traceparent` starts a trace of its own instead of joining the context active when the listener was attached.
+- The publication span is active while the message is published, so the spans of the Pub/Sub client (`enableOpenTelemetryTracing`) are its children.
+
 ## [0.7.0] - 2026-11-08
 
 ### Changed
