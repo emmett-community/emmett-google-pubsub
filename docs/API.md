@@ -83,6 +83,7 @@ interface PubSubMessageBusConfig {
   autoCreateResources?: boolean;
   cleanupOnClose?: boolean;
   closePubSubClient?: boolean;
+  publishTimeoutMs?: number;
 }
 ```
 
@@ -96,6 +97,7 @@ interface PubSubMessageBusConfig {
 | `autoCreateResources` | `boolean` | `true` | Auto-create topics and subscriptions |
 | `cleanupOnClose` | `boolean` | `false` | Delete subscriptions on close |
 | `closePubSubClient` | `boolean` | `true` | Close PubSub client on close |
+| `publishTimeoutMs` | `number` | client defaults | Time limit of each Pub/Sub client call of a publication (topic check, creation, publish), retries included. Without it a publish that keeps failing is retried for 60 s, plus the wait for the last attempt (about 80 s measured). Set it when the publication runs inside a request with a deadline of its own |
 
 ### SubscriptionOptions
 
@@ -236,6 +238,8 @@ publish<EventType extends Event>(event: EventType): Promise<void>
 - Events are delivered to all subscribers (1-to-many)
 - Each subscriber has its own PubSub subscription
 - Can be called before `start()` (producer-only mode)
+- The topic object is kept and the topic is checked (and created, with `autoCreateResources`) on its first publication only. A publish that fails with NOT_FOUND, because the topic was deleted after that, checks the topic again and publishes once more
+- With `publishTimeoutMs`, the publication fails with `DEADLINE_EXCEEDED` (code 4) when Pub/Sub does not answer in time
 
 **Example:**
 

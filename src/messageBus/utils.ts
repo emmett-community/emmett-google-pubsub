@@ -8,6 +8,13 @@ export function generateUUID(): string {
 }
 
 /**
+ * Whether an error of the Pub/Sub client is NOT_FOUND (gRPC code 5)
+ */
+export function isNotFound(error: unknown): boolean {
+  return (error as { code?: number } | undefined)?.code === 5;
+}
+
+/**
  * Validate that a string is not empty
  */
 export function assertNotEmptyString(

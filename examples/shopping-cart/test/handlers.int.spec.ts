@@ -27,7 +27,7 @@ import { shoppingCartShortInfoProjection } from '../src/shoppingCarts/getShortIn
 import assert from 'node:assert';
 import { InMemoryFirestore } from './support/inMemoryFirestore';
 import { InMemoryRealtimeDb } from './support/inMemoryRealtimeDb';
-import { InMemoryPubSub } from './support/inMemoryPubSub';
+import { InMemoryPubSub } from '@emmett-community/emmett-google-pubsub/testing';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

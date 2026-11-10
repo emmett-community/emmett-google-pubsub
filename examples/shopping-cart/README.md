@@ -355,8 +355,7 @@ examples/shopping-cart/
 │       │   ├── firebase.json              # Emulator config
 │       │   └── .firebaserc                # Emulator project
 │       ├── inMemoryFirestore.ts           # In-memory Firestore
-│       ├── inMemoryRealtimeDb.ts          # In-memory Realtime DB
-│       └── inMemoryPubSub.ts              # In-memory PubSub
+│       └── inMemoryRealtimeDb.ts          # In-memory Realtime DB
 ├── docker-compose.yml                      # Firebase emulators
 └── .http                                   # Manual test requests
 ```

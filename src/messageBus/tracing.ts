@@ -1,6 +1,6 @@
 import {
-  context,
   isSpanContextValid,
+  ROOT_CONTEXT,
   trace,
   TraceFlags,
   type Context,
@@ -41,12 +41,13 @@ export function parseTraceparent(
 }
 
 /**
- * Context whose active span is the remote parent described by `traceparent`; the current
- * context when the value is missing or malformed.
+ * Context in which a received message is handled: its active span is the remote parent described
+ * by `traceparent`, and without a valid value it is a root context, so the handling starts a trace
+ * of its own instead of joining whatever was active when the listener was attached.
  */
 export function contextFromTraceparent(value: string | undefined): Context {
   const spanContext = parseTraceparent(value);
   return spanContext
-    ? trace.setSpanContext(context.active(), spanContext)
-    : context.active();
+    ? trace.setSpanContext(ROOT_CONTEXT, spanContext)
+    : ROOT_CONTEXT;
 }
